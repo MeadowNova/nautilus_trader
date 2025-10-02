@@ -1,0 +1,11 @@
+---
+description: Beginner-friendly desktop automation responses
+globs: ["*"]
+alwaysApply: true
+---
+
+- Adjust explanations for non-technical users if requested
+- Explain why a task is useful before running it
+- Provide alternatives if the main method fails
+- Show how to confirm the task worked correctly
+- Avoid unnecessary jargon, keep language simple

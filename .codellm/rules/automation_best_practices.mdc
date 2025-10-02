@@ -1,0 +1,12 @@
+---
+description: Automation best practices
+globs:  ["browsers/*", "editors/*", "terminals/*"]
+alwaysApply: true
+---
+
+- Prefer keyboard shortcuts over mouse clicks
+- Add small delays between automation steps for reliability
+- Verify each action completed successfully before continuing
+- Implement error handling for all automation tasks
+- Save logs of automation sessions for debugging
+- Take screenshots on failure for troubleshooting
