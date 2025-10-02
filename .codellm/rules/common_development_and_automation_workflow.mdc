@@ -1,0 +1,17 @@
+---
+description: development and automoation workflows
+globs: ["*.py", "*.js", "*.ts", "*.sh"]
+alwaysApply: true
+---
+
+Use this workflow for new tasks:
+
+1. Open VS Code in the relevant project directory
+2. Install dependencies (npm install, pip install, etc.)
+3. Run the local development server if applicable
+4. Open the project in the browser on localhost
+5. Verify logs and outputs before continuing
+
+- Always check for existing environments before creating new ones
+- Format code before saving
+- Standardize naming conventions for branches and files
