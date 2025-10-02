@@ -32,7 +32,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Added BitMEX adapter integration tests
 - Added OKX adapter integration tests
-- Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000), thanks @filipmacek
+- Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010), thanks @filipmacek
 - Implemented BitMEX robust ping/pong handling
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
@@ -44,6 +44,7 @@ Released on TBD (UTC).
 - Implemented Hyperliquid DataClient in Python (#2996), thanks @nicolad
 - Implemented Hyperliquid DataClient in Rust (#2999), thanks @nicolad
 - Implemented Hyperliquid ExecutionClient in Python (#3003), thanks @nicolad
+- Standardized Binance order validations with proper order denied events to avoid "hanging" orders
 - Improved clock and timer thread safety and validations
 - Improved live timer lifecycle management by canceling existing timers with the same name
 - Improved socket reconnect sequence and tighten client setup and testing
@@ -71,6 +72,7 @@ Released on TBD (UTC).
 - Fixed `SandboxExecutionClient` instrument data handling
 - Fixed `AccountState` Arrow serialization (#3005), thanks for reporting @nikzasel
 - Fixed Binance duplicate `OrderSubmitted` event generation for order lists (#2994), thanks @sunlei
+- Fixed Binance websocket fill message parsing for Binance US with extra fields (#3006), thanks for reporting @bmlquant
 - Fixed Bybit currency parsing from venue resulting in incorrectly low precision (e.g., USDT precision 4 rather than 8)
 - Fixed Bybit handling of `OrderModifyRejected` events from pending updates
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
