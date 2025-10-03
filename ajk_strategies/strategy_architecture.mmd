@@ -1,0 +1,48 @@
+graph TD
+    subgraph "Input Data"
+        A[Market Data - OHLCV] --> C{AI-Adaptive Strategy};
+        B[Reddit/Social Media] --> C;
+    end
+
+    subgraph "Core Strategy Engine"
+        C -- Manages --> D[Indicators - EMA, RSI, ATR];
+        C -- Manages --> E[Advanced Components];
+        C -- Executes --> F[Trading Actions - Buy/Sell];
+    end
+
+    subgraph "Advanced Components"
+        E --> G[MultiLayer Optimizer];
+        E --> H[Advanced Pattern Detector];
+        E --> I[Market Regime Detector];
+        E --> J[Reddit Trend Analyzer];
+        E --> K[Advanced Risk Manager];
+    end
+
+    subgraph "Optimization & Learning Loop"
+        G -- Tunes --> D;
+        G -- Tunes --> C;
+        F -- Trade Outcome --> G;
+    end
+
+    subgraph "Signal Generation"
+        D -- Features --> L[Signal Aggregator];
+        H -- Features --> L;
+        I -- Features --> L;
+        J -- Features --> L;
+        L -- Generates --> M[TradingSignal];
+    end
+
+    subgraph "Risk & Execution"
+        M -- Evaluated by --> K;
+        K -- Approves/Sizes --> F;
+    end
+
+    style C fill:#f9f,stroke:#333,stroke-width:2px
+    style E fill:#bbf,stroke:#333,stroke-width:2px
+    style G fill:#ccf,stroke:#333,stroke-width:1px
+    style H fill:#ccf,stroke:#333,stroke-width:1px
+    style I fill:#ccf,stroke:#333,stroke-width:1px
+    style J fill:#ccf,stroke:#333,stroke-width:1px
+    style K fill:#f99,stroke:#333,stroke-width:2px
+    style F fill:#9f9,stroke:#333,stroke-width:2px
+2px
