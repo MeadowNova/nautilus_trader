@@ -1,64 +1,131 @@
-# Implementation Guide: [Database Migration Plan]
+# Implementation Guide: Nautilus Trader Setup & Learning
 
 ## Context
-- **Plan Reference**: [/home/ajk/FormatIQ_v3/ai-working/database/plan.md]
-- **Research Notes**: [/home/ajk/FormatIQ_v3/ai-working/database/research/analysis.md]
-- **Objective**: [What this implementation must achieve]
+- **Plan Reference**: `/home/ajk/Nautilus/nautilus_trader/ai-working/setup/plan.md`
+- **Research Notes**: `/home/ajk/Nautilus/nautilus_trader/ai-working/setup/research/nautilus_ccxt_research.md`
+- **Objective**: Master Nautilus Trader for algorithmic trading with AI-driven adaptive strategies
+
+**Last Updated**: October 2, 2025  
+**Current Phase**: Phase 3 - Learning & Strategy Development
 
 ---
 
-## Phase 1: Setup & Verification
-- [x] Read plan and research notes fully
-- [x] Confirm related files and modules
-- [x] Verify existing checkmarks in plan (if resuming)
+## Phase 1: Research & Understanding ✅ COMPLETE
+- [x] Read Nautilus Trader documentation
+- [x] Understand architecture (Rust core + Python interface)
+- [x] Study existing adapter patterns
+- [x] Review CCXT integration history
+- [x] Create comprehensive research document
+
+**Completion Date**: October 2, 2025
 
 ---
 
-## Phase 2: Implementation Steps
-### Step 1
-- Status: Completed (see compaction steps 1-3)
-- Notes: Supabase DSN normalization merged; no further changes planned unless regressions appear.
+## Phase 2: Environment Setup ✅ COMPLETE
+- [x] Install Rust toolchain (1.90.0)
+- [x] Install Clang compiler (18.1.3)
+- [x] Install uv package manager (already present)
+- [x] Build NautilusTrader from source
+- [x] Create environment activation script
+- [x] Verify installation with first backtest
 
-### Step 2
-- Status: Completed (see compaction steps 1-3)
-- Notes: Async session factories exported and adopted across services and workers.
+**Completion Date**: October 2, 2025
 
-### Step 3
-- Status: Completed (see compaction steps 1-3)
-- Notes: Job and ScoreImprovement schemas realigned; migrations drafted awaiting Alembic wiring.
+---
 
-### Step 4 (Completed)
-- Action: Implement Celery async execution strategy so background tasks await DB operations.
-- Files: `apps/backend/app/tasks.py`, `apps/backend/app/core/celery_config.py`, `apps/backend/app/services/*`
-- Expected Outcome: Celery workers consistently execute async DB calls using shared session factories without event loop conflicts.
-- Verification: Manual smoke run of Celery worker invoking `optimize_resume` and `process_reconstruction`; ensure tasks complete without `RuntimeError: no running event loop`.
-- Status Update: Introduced `AwaitableTask` base with per-worker event loop lifecycle hooks so async tasks execute via `loop.run_until_complete`; cleaned task module imports.
-- Validation Note: Local eager execution (`dummy_async_task.apply()`) confirmed awaitable tasks complete via new loop wrapper; full worker validation pending queued broker run.
+## Phase 3: Learning & Strategy Development 🔄 IN PROGRESS
+### Step 1: Initial Backtesting (✅ Complete)
+- **Action**: Run first backtest to understand workflow
+- **Files**: `examples/backtest/crypto_ema_cross_ethusdt_trade_ticks.py`
+- **Expected Outcome**: Successfully execute backtest and view results
+- **Status**: Complete - 15 trades executed on ETH/USDT
+- **Learnings**: 
+  - Mostly losses, strategy needs optimization
+  - Understanding of backtest workflow achieved
+  - Results saved to `backtest_results/`
 
-### Step 5 (In Progress)
-- Action: Centralize telemetry credentials in settings and ensure Alembic uses whichever Postgres DSN is active (`.env.local` for docker today, Supabase later).
-- Files: `apps/backend/app/telemetry/*`, `apps/backend/app/core/config.py`, `apps/backend/database/env.py`, `apps/backend/alembic.ini`
-- Expected Outcome: Telemetry writes succeed using unified settings; Alembic upgrades operate against the current `DATABASE_URL` without manual rewiring.
-- Status Update: Settings now prioritize `.env.local` (renamed from `.env.supabase`) and accept `DATABASE_URL` directly; `database/env.py` mirrors the same lookup so Alembic reads the local DSN. Docker compose now publishes Postgres on `localhost:5433` with credentials `formatiq/averysafepassword`. Seed workflow (`scripts/seed_local_db.py`) rebuilds the domain + telemetry tables and stamps Alembic with `fig_seed_20250913`, for which a no-op revision now exists. Telemetry smoke writes remain validated via direct `fiq_events` insert and Supabase REST client.
-- Validation Note: Supabase connection verified via psycopg2 (`SELECT version()`), async SQLAlchemy ping, and full Alembic upgrade; local docker verification achieved via seed script, with `alembic current` returning `fig_seed_20250913`.
-- High-Priority Subtasks:
-  1. ✅ Refresh `.env.sample` and developer docs to default to local docker `DATABASE_URL` / `REDIS_URL` (now pointing to port 5433 and the reset password).
-  2. ✅ Wire config + Alembic loaders to `.env.local`, keeping Supabase DSNs optional for staging.
-  3. ✅ Provide seeding script + marker revision so local docker instances reflect Supabase schema and `alembic current` succeeds.
-  4. ✅ Validate Celery/Redis runtime: detached worker connected to Redis (`celery@AdamsLaptop`), processed `process_resume_task` against empty DB (expected "resume not found" log), and logged rejection of `celery.ping` (task not registered) for observability.
-  5. ✅ Telemetry REST + direct write smoke tests (Supabase) already executed; no new action.
+### Step 2: Enhanced Analytics (✅ Complete)
+- **Action**: Create detailed performance analysis script
+- **Files**: `examples/backtest/crypto_ema_cross_ethusdt_detailed_analysis.py`
+- **Expected Outcome**: Comprehensive metrics (win rate, Sharpe, drawdown, P&L)
+- **Status**: Complete with fixes
+- **Issues Resolved**:
+  - ATR indicator import path corrected
+  - Balance object attribute access fixed (`.total.currency`)
+  - Multiple import adjustments for NautilusTrader API
+- **Learnings**: Full performance metrics for strategy evaluation
 
-### Step 6 (In Progress)
-- Action: Execute full verification suite (pytest, smoke scripts) and add monitoring hooks per plan.
-- Files: `apps/backend/tests/**`, `apps/backend/scripts/**`, deployment runbooks
-- Expected Outcome: Supabase-backed stack passes automated checks with observable connection metrics.
-- Verification Plan:
-  1. Run Alembic against live Supabase: `alembic upgrade head` (after seeding required data for data-dependent migrations). **Status:** Completed against pooled DSN after widening `alembic_version.version_num` to `varchar(64)`; local docker now managed via seed workflow.
-  2. Execute backend test suite: `pytest -q` from `apps/backend` (Supabase DSN loaded via `.env`). **Status:** Outstanding; prior Supabase run reported 22 failures + 2 errors unrelated to connectivity.
-  3. Smoke-test async DB access: invoke `AsyncSessionLocal().execute("SELECT 1")` and run `alembic current` to confirm schema alignment. **Status:** Completed (local seed + alembic marker).
-  4. Celery worker check: launch worker with `celery -A app.core.celery_config.celery_app worker --loglevel=info` and enqueue representative tasks (resume/job) to verify awaited execution end-to-end. **Status:** Completed locally—worker connected to Redis and DB, processed sample task, and logged expected warning for missing resume ID.
-  5. Observe telemetry writes by toggling `FORMATIQ_DB_TELEMETRY=1` and verifying `fiq_events` entries via Supabase REST client test helper. **Status:** Completed previously (Supabase smoke).
-- Verification Note: Celery log stored at `/tmp/celery-formatiq.log` (2025-09-28) records Redis connect, task execution, and the handled missing-resume warning; `celery@AdamsLaptop` responded to `inspect ping` during the smoke.
+### Step 3: AI Adaptive Strategy Demo (✅ Complete)
+- **Action**: Build self-correcting strategy with adaptive parameters
+- **Files**: `examples/backtest/adaptive_strategy_demo.py`
+- **Expected Outcome**: Strategy that adjusts EMA periods based on volatility
+- **Status**: Complete with multiple fixes
+- **Issues Resolved**:
+  1. Import paths: `nautilus_trader.indicators.averages` (not `.average.ema`)
+  2. Removed ATR indicator complexity, replaced with price change volatility
+  3. Fixed `OrderSide` enum usage (must use `OrderSide.BUY`, not `"BUY"`)
+  4. Fixed `Quantity` type (must use `Quantity.from_str(str(value))`)
+- **Results**: 
+  - 139 orders generated
+  - 0 closed positions (no exit signals during uptrend)
+  - Successfully demonstrates adaptive parameter adjustment
+- **Key Learning**: Pure EMA crossover needs additional exit conditions:
+  - Time-based stops
+  - Profit targets
+  - Trailing stops
+
+### Step 4: Reddit Sentiment Analysis (✅ Complete)
+- **Action**: Test Reddit scraper for crypto sentiment analysis
+- **Files**: 
+  - `docs/algorithms/reddit.py` (existing)
+  - `test_reddit_sentiment.py` (created)
+- **Expected Outcome**: Gather sentiment from crypto subreddits
+- **Status**: Complete - Successfully tested with 3 subreddits
+- **Dependencies**: Installed `httpx` library
+- **Results**:
+  - **r/CryptoCurrency**: 25 posts, avg 141.6 score, NEUTRAL, BTC most mentioned
+  - **r/Bitcoin**: 25 posts, avg 384.2 score, NEUTRAL, high engagement
+  - **r/ethereum**: 25 posts, avg 45.3 score, slightly BULLISH (0.11)
+- **Capabilities**:
+  - Multi-subreddit analysis
+  - Sentiment scoring (bullish/bearish keywords)
+  - Coin mention tracking (BTC, ETH, SOL, etc.)
+  - Engagement metrics (scores, upvote ratios)
+  - Trading signal generation
+- **Limitations**:
+  - Rate limits (~60 requests/minute)
+  - No historical data
+  - Basic keyword sentiment (not NLP)
+  - Lags price action
+- **Best Use**: Supplementary signal for position sizing, not primary strategy
+
+### Step 5: Exit Condition Implementation (📋 Planned)
+- **Action**: Add proper exit logic to adaptive strategy
+- **Files**: `examples/backtest/adaptive_strategy_demo.py`
+- **Expected Outcome**: Strategy generates closed positions and complete statistics
+- **Planned Changes**:
+  1. Time-based exits (max 30-minute hold)
+  2. Profit target exits (1-2% gain)
+  3. Trailing stop losses
+  4. Test with shorter EMA periods (5/10 vs 10/20)
+- **Success Criteria**:
+  - At least 10 closed positions
+  - Statistics calculated (no more "nan")
+  - Positive or breakeven results
+
+### Step 6: Sentiment Integration (📋 Planned)
+- **Action**: Integrate Reddit sentiment into trading strategy
+- **Files**: New Actor component + modified strategy
+- **Expected Outcome**: Position sizing adjusts based on sentiment
+- **Planned Components**:
+  1. `RedditSentimentActor` - Polls Reddit every 5-10 minutes
+  2. Custom `SentimentData` message type
+  3. Strategy subscribes to sentiment updates
+  4. Position size = base_size × sentiment_multiplier
+- **Example Logic**:
+  - Bullish (>0.3): 1.2x position size
+  - Neutral (±0.2): 1.0x position size
+  - Bearish (<-0.3): 0.5x position size or skip trade
 
 ---
 
