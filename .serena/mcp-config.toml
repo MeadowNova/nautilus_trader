@@ -1,0 +1,40 @@
+# Serena MCP Server Configuration (TOML Format)
+# Compatible with Claude Desktop, Cursor, and other MCP clients
+
+[mcpServers.serena]
+command = "uv"
+args = [
+    "run",
+    "--directory",
+    "/home/ajk/Serena/serena",
+    "serena",
+    "start-mcp-server",
+    "--context",
+    "ide-assistant"
+]
+
+[mcpServers.serena.env]
+SERENA_PROJECT = "/home/ajk/FormatIQ_v3"
+SERENA_AUTO_ACTIVATE = "true"
+SERENA_LOG_LEVEL = "20"  # 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR
+SERENA_WEB_DASHBOARD = "true"
+SERENA_WEB_DASHBOARD_OPEN = "false"
+
+[mcpServers.serena.metadata]
+name = "Serena Code Agent"
+description = "Intelligent code navigation and semantic analysis for FormatIQ_v3"
+version = "0.1.4"
+homepage = "https://github.com/serena/serena"
+
+# Global keyboard shortcuts (if supported by client)
+[globalShortcuts]
+"serena.findSymbol" = "Ctrl+Shift+S"
+"serena.getOverview" = "Ctrl+Shift+O"
+"serena.findReferences" = "Ctrl+Shift+R"
+
+# MCP client settings
+[mcpSettings]
+timeout = 240000  # milliseconds
+autoReconnect = true
+maxRetries = 3
+logLevel = "info"

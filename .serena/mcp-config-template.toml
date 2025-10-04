@@ -1,0 +1,49 @@
+# Serena MCP Configuration Template (TOML Format)
+# Replace {{PLACEHOLDERS}} with your actual paths
+
+# INSTRUCTIONS:
+# 1. Copy this file and rename it (remove -template)
+# 2. Replace all {{PLACEHOLDERS}} with your actual values
+# 3. For Claude Desktop: Copy to ~/.config/claude-desktop/config.toml
+# 4. For other MCP clients: Use as per their documentation
+
+# EXAMPLE VALUES:
+# {{SERENA_INSTALLATION_PATH}} = /home/ajk/Serena/serena
+# {{PROJECT_ROOT_PATH}} = /home/ajk/MyProject
+# {{PROJECT_NAME}} = MyProject
+
+[mcpServers.serena]
+command = "uv"
+args = [
+    "run",
+    "--directory",
+    "{{SERENA_INSTALLATION_PATH}}",
+    "serena",
+    "start-mcp-server",
+    "--context",
+    "ide-assistant"
+]
+
+[mcpServers.serena.env]
+SERENA_PROJECT = "{{PROJECT_ROOT_PATH}}"
+SERENA_AUTO_ACTIVATE = "true"
+SERENA_LOG_LEVEL = "20"  # 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR
+SERENA_WEB_DASHBOARD = "true"
+SERENA_WEB_DASHBOARD_OPEN = "false"
+
+[mcpServers.serena.metadata]
+name = "Serena Code Agent"
+description = "Intelligent code navigation and semantic analysis for {{PROJECT_NAME}}"
+version = "0.1.4"
+homepage = "https://github.com/serena/serena"
+
+[globalShortcuts]
+"serena.findSymbol" = "Ctrl+Shift+S"
+"serena.getOverview" = "Ctrl+Shift+O"
+"serena.findReferences" = "Ctrl+Shift+R"
+
+[mcpSettings]
+timeout = 240000  # milliseconds
+autoReconnect = true
+maxRetries = 3
+logLevel = "info"
