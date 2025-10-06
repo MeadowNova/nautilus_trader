@@ -15,9 +15,9 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId, Venue as VenueId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.strategy import Strategy
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.indicators.atr import AverageTrueRange
-from nautilus_trader.indicators.rsi import RelativeStrengthIndex
+from nautilus_trader.indicators import ExponentialMovingAverage
+from nautilus_trader.indicators import AverageTrueRange
+from nautilus_trader.indicators import RelativeStrengthIndex
 from nautilus_trader.model.data import BarType
 
 from .ai_adaptive_strategy import (

@@ -1,0 +1,14 @@
+Dataset: GotThatData/kraken-trading-data
+Total records: 9000
+Columns: ['timestamp', 'pair', 'price', 'volume', 'bid', 'ask', 'low', 'high', 'vwap', 'trades']
+Date range: 2024-12-18 04:19:09 to 2024-12-18 05:11:42
+
+Sample data:
+             timestamp      pair  ...           vwap  trades
+0  2024-12-18 04:19:09  XXBTZUSD  ...  105162.177470    9104
+1  2024-12-18 04:19:09  XETHZUSD  ...    3866.283640    3295
+2  2024-12-18 04:19:10  XXRPZUSD  ...       2.547249    9183
+3  2024-12-18 04:19:10    ADAUSD  ...       1.039812    2646
+4  2024-12-18 04:19:10    XDGUSD  ...       0.391117    2641
+
+[5 rows x 10 columns]

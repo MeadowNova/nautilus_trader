@@ -42,22 +42,17 @@
   - BarType format (EXTERNAL aggregation source)
   - DataFrame preprocessing (datetime index, numeric columns)
 
-### ✅ Phase 4b: AI Strategy Backtesting (COMPLETE)
-- [x] Created comprehensive backtest runner (512 lines) ✅
-- [x] Integrated AI-Adaptive Strategy with real data ✅
-- [x] Fixed data loading and preprocessing ✅
-- [x] **Fixed BarType parsing** (line 180 - added `-EXTERNAL` suffix) ✅
-- [x] Run successful BTC backtest (50K bars, 5.04s) ✅
-- [x] Run successful ETH backtest (50K bars) ✅
-- [x] Generate performance metrics report ✅
-- [x] Implemented results export to `backtest_results/` directory ✅
-- [x] Created comprehensive session summary documentation ✅
+### 🔄 Phase 4b: AI Strategy Backtesting (IN PROGRESS)
+- [x] Created comprehensive backtest runner (442 lines)
+- [x] Integrated AI-Adaptive Strategy with real data
+- [x] Fixed data loading and preprocessing
+- [ ] **FINAL FIX NEEDED**: BarType parsing in strategy config (1 line fix)
+- [ ] Run successful BTC backtest
+- [ ] Run successful ETH backtest
+- [ ] Generate performance metrics report
 
-**Key Achievement**: Strategy operational and demonstrating excellent risk management by staying out of ranging markets (63-96% confidence detection)
-
-### 🔄 Phase 5: Production Infrastructure (IN PROGRESS - NEXT)
+### 📋 Phase 5: Production Infrastructure (PLANNED)
 **Target:** Robust backtesting → Live trading system
-**Working Directory:** `/home/ajk/Nautilus/nautilus_trader/ai-working/database_Infra layer`
 
 #### 5.1 Database Layer
 - [ ] **PostgreSQL Setup**
@@ -334,7 +329,14 @@ python scripts/walk_forward_optimization.py \
 ## 🐛 KNOWN ISSUES & BLOCKERS
 
 ### Current Issues
-1. **No Production Infrastructure** (High Priority - NEXT PHASE)
+1. **BarType Configuration Issue** (High Priority - ACTIVE)
+   - Issue: Strategy `on_start()` receives bar_type string without aggregation source suffix
+   - Error: `ValueError: Error parsing 'BTCUSDT.BINANCE-1-MINUTE-LAST', invalid token: '' at position 0`
+   - Location: `ai_adaptive_strategy_main.py` line 105
+   - Status: Identified - needs 1-line fix to ensure full bar_type string is passed
+   - Impact: Prevents backtest execution (all other systems working)
+
+2. **No Production Infrastructure** (Medium Priority)
    - Issue: No database, caching, or monitoring
    - Impact: Can't store results or monitor performance
    - Fix Plan: Docker Compose setup next week
@@ -350,10 +352,6 @@ python scripts/walk_forward_optimization.py \
 - ✅ BarType aggregation source → Changed to EXTERNAL
 - ✅ DataFrame preprocessing → Added datetime index, numeric columns only
 - ✅ Data loading → Successfully loading 50K+ bars from Parquet
-- ✅ BarType configuration parsing → Fixed line 180 (added -EXTERNAL suffix)
-- ✅ Results export → Implemented automatic saving to backtest_results/
-- ✅ Date range selection → Configured for 2024 data (Jan-Mar)
-- ✅ Backtest execution → Full run completed (50K bars in 5.04s)
 
 ---
 
@@ -389,40 +387,19 @@ python scripts/walk_forward_optimization.py \
 
 ---
 
-## 🎯 COMPLETED SESSION ACHIEVEMENTS (October 6, 2025)
-
-**PRIMARY GOAL**: ✅ Real backtests running with historical data - **COMPLETE**
-
-### Session Checklist - ALL COMPLETE ✅
-- [x] 4.3 years BTC/ETH data loaded (2.26M bars each)
-- [x] Data validation and preprocessing working
-- [x] Backtest runner fully operational
-- [x] Performance metrics and results export functional
-- [x] Comprehensive documentation created
-- [x] All technical issues resolved
-
-**Actual Time**: ~4 hours  
-**Success Criteria**: ✅ **EXCEEDED** - Complete backtest with 50K bars, regime detection working, risk management active, results automatically saved
-
----
-
 ## 🎯 FOCUS FOR NEXT SESSION
 
-**PRIMARY GOAL**: Production Infrastructure Setup
+**PRIMARY GOAL**: Get real backtests running with historical data
 
-### Working Directory
-`/home/ajk/Nautilus/nautilus_trader/ai-working/database_Infra layer`
+### Session Checklist
+- [ ] Download 1 year ETH/USD data from Kraken
+- [ ] Create data cleaning/validation pipeline
+- [ ] Run Tutorial 1 with real data
+- [ ] Document data quality issues
+- [ ] Begin PostgreSQL setup if time permits
 
-### Infrastructure Checklist
-- [ ] PostgreSQL database setup (schema design, installation)
-- [ ] Redis caching layer (configuration, integration)
-- [ ] Prometheus + Grafana monitoring (metrics collection, dashboards)
-- [ ] Docker Compose orchestration (multi-container setup)
-- [ ] Backtest results storage pipeline
-- [ ] Performance monitoring integration
-
-**Estimated Time**: 6-8 hours  
-**Success Criteria**: Full infrastructure stack running with monitoring dashboards
+**Estimated Time**: 4-6 hours  
+**Success Criteria**: Complete backtest on real data with performance report
 
 ## Key Learnings
 1. **EMA Crossover Limitations**: Pure crossover strategies need multiple exit conditions (time, profit, trailing stops)

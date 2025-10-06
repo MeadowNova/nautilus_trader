@@ -1,6 +1,6 @@
 # AI Working Directory
 
-This folder tracks ongoing Context Engineering Workflow activity for FormatIQ.
+This folder tracks ongoing Context Engineering Workflow activity for Nautilus Trader.
 
 ## Structure
 - `feature-<slug>/`
