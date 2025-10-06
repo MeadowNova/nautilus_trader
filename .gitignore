@@ -106,3 +106,5 @@ tests/test_data/**/backtest/**
 !tests/integration_tests/adapters/betfair/responses/*.log
 !/nautilus_core/adapters/src/databento/test_data/*
 *.sh
+.env
+.env.local
