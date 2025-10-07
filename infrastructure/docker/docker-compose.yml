@@ -1,0 +1,344 @@
+#version: '3.8'
+
+###############################################################################
+# NAUTILUS TRADER PRODUCTION INFRASTRUCTURE
+# 
+# Services:
+#   - PostgreSQL: Persistent data storage (backtests, trades, performance)
+#   - Redis: Caching layer (strategy state, ML models, market data)
+#   - Prometheus: Metrics collection
+#   - Grafana: Visualization dashboards
+#   - Postgres Exporter: PostgreSQL metrics for Prometheus
+#   - Redis Exporter: Redis metrics for Prometheus
+#
+# Usage:
+#   Start all:     docker compose --env-file ../.env.local up -d
+#   Stop all:      docker compose --env-file ../.env.local down
+#   View logs:     docker compose --env-file ../.env.local logs -f [service]
+#   Restart:       docker compose --env-file ../.env.local restart [service]
+#   Status:        docker compose ps
+#
+# Access:
+#   Grafana:       http://localhost:3000 (admin/password from .env.local)
+#   Prometheus:    http://localhost:9090
+#   PostgreSQL:    localhost:5432
+#   Redis:         localhost:6379
+#
+###############################################################################
+
+services:
+  #############################################################################
+  # POSTGRESQL - Persistent Data Storage
+  #############################################################################
+  postgres:
+    image: postgres:16-alpine
+    container_name: nautilus_postgres
+    hostname: postgres
+    env_file:
+      - ../.env.local
+    environment:
+      POSTGRES_DB: ${DB_NAME:-nautilus_trader}
+      POSTGRES_USER: ${DB_USER:-nautilus}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env.local}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      # Performance tuning
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      # Data persistence
+      - postgres_data:/var/lib/postgresql/data
+      
+      # Schema initialization (auto-run on first startup)
+      - ../postgres/01-base-schema.sql:/docker-entrypoint-initdb.d/01-base-schema.sql:ro
+      - ../postgres/02-ai-extensions.sql:/docker-entrypoint-initdb.d/02-ai-extensions.sql:ro
+      - ../postgres/03-indexes.sql:/docker-entrypoint-initdb.d/03-indexes.sql:ro
+      - ../../schema/sql:/docker-entrypoint-initdb.d/schema:ro
+      
+      # PostgreSQL configuration
+      - ../postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      
+    command: 
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/postgresql.conf"
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-nautilus} -d ${DB_NAME:-nautilus_trader}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    
+    restart: unless-stopped
+    
+    networks:
+      - nautilus_network
+    
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  #############################################################################
+  # REDIS - Caching Layer
+  #############################################################################
+  redis:
+    image: redis:7-alpine
+    container_name: nautilus_redis
+    hostname: redis
+    env_file:
+      - ../.env.local
+    command: >
+      redis-server 
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env.local}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --appendonly yes
+      --appendfsync everysec
+    
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    
+    volumes:
+      - redis_data:/data
+    
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    
+    restart: unless-stopped
+    
+    networks:
+      - nautilus_network
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  #############################################################################
+  # PROMETHEUS - Metrics Collection
+  #############################################################################
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nautilus_prometheus
+    hostname: prometheus
+    user: "root"  # Needed for file permissions
+    env_file:
+      - ../.env.local
+    
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    
+    volumes:
+      - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    
+    restart: unless-stopped
+    
+    networks:
+      - nautilus_network
+    
+    depends_on:
+      - postgres
+      - redis
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  #############################################################################
+  # GRAFANA - Visualization Dashboards
+  #############################################################################
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nautilus_grafana
+    hostname: grafana
+    user: "root"  # Needed for file permissions
+    env_file:
+      - ../.env.local
+    
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD must be set in .env.local}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_PLUGINS_PREINSTALL=redis-datasource
+      - GF_SERVER_ROOT_URL=http://localhost:${GRAFANA_PORT:-3000}
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+    
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    restart: unless-stopped
+    
+    networks:
+      - nautilus_network
+    
+    depends_on:
+      - postgres
+      - prometheus
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+  #############################################################################
+  # POSTGRES EXPORTER - PostgreSQL Metrics for Prometheus
+  #############################################################################
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: nautilus_postgres_exporter
+    hostname: postgres_exporter
+    env_file:
+      - ../.env.local
+    
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DB_USER:-nautilus}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-nautilus_trader}?sslmode=disable"
+      PG_EXPORTER_AUTO_DISCOVER_DATABASES: "true"
+    
+    ports:
+      - "9187:9187"
+    
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:9187/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    restart: unless-stopped
+    
+    networks:
+      - nautilus_network
+    
+    depends_on:
+      - postgres
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+  #############################################################################
+  # REDIS EXPORTER - Redis Metrics for Prometheus
+  #############################################################################
+  redis_exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: nautilus_redis_exporter
+    hostname: redis_exporter
+    env_file:
+      - ../.env.local
+    
+    environment:
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+    
+    ports:
+      - "9121:9121"
+    
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:9121/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    restart: unless-stopped
+    
+    networks:
+      - nautilus_network
+    
+    depends_on:
+      - redis
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+###############################################################################
+# NETWORKS
+###############################################################################
+networks:
+  nautilus_network:
+    name: nautilus_network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+###############################################################################
+# VOLUMES (Persistent Data)
+###############################################################################
+volumes:
+  postgres_data:
+    name: nautilus_postgres_data
+    driver: local
+  
+  redis_data:
+    name: nautilus_redis_data
+    driver: local
+  
+  prometheus_data:
+    name: nautilus_prometheus_data
+    driver: local
+  
+  grafana_data:
+    name: nautilus_grafana_data
+    driver: local

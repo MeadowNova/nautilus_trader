@@ -52,15 +52,33 @@ Store backtest results in PostgreSQL instead of CSV files, enabling:
 
 #### Step 1.1: Deploy PostgreSQL Container
 ```bash
-cd /home/ajk/Nautilus/nautilus_trader/infrastructure/docker
+cd /home/ajk/Nautilus/nautilus_trader
+source activate_env.sh
 
-# Start PostgreSQL
-docker-compose up -d postgres
+# Pull & start full stack (sequential pulls avoid Docker compose bug)
+docker compose --env-file infrastructure/.env.local \
+  -f infrastructure/docker/docker-compose.yml pull
 
-# Verify
-docker-compose ps
-docker-compose logs postgres
+docker compose --env-file infrastructure/.env.local \
+  -f infrastructure/docker/docker-compose.yml up -d
+
+docker compose --env-file infrastructure/.env.local \
+  -f infrastructure/docker/docker-compose.yml ps
+
+# Ports (host → container)
+# - PostgreSQL: 5433 → 5432
+# - Redis:     6378 → 6379
+# - Prometheus: 9090
+# - Grafana:    3000
+# - Exporters: 9187 (Postgres) / 9121 (Redis)
 ```
+
+```bash
+docker compose --env-file infrastructure/.env.local \
+  -f infrastructure/docker/docker-compose.yml logs postgres
+```
+
+> Grafana note: the Postgres datasource ships with Grafana 12, so only `GF_PLUGINS_PREINSTALL=redis-datasource` is set. Legacy `GF_INSTALL_PLUGINS` is removed to avoid 404 errors.
 
 #### Step 1.2: Create Database Schema
 The parent plan already has comprehensive schema at `infrastructure/postgres/schema.sql`. We'll extend it for AI-Adaptive specific needs:
@@ -93,6 +111,19 @@ CREATE TABLE ml_optimization_log (
     
     created_at TIMESTAMP DEFAULT NOW()
 );
+```
+
+---
+
+## Phase 2: Model Training Artefacts (2025-10-07)
+- **Market Regime HMM:** `ajk_strategies/models/market_regime_hmm.pkl` trained on 2,262,971 rows; state counts `[57896, 1011601, 1, 1193472, 1]`.
+- **Price Forecast LSTM:** `ajk_strategies/models/price_forecast_lstm.h5` with metadata `price_forecast_lstm_meta.pkl`; validation MSE `0.83754` after early stopping at epoch 5.
+- **Signal Aggregator XGBoost:** `ajk_strategies/models/signal_aggregator_xgb.pkl`; class distribution `[629103, 819741, 814091]` for hold/long/short respectively.
+- Training CLI enhancements:
+  * `features.load_price_frame` now auto-detects `ts_event`/`time` columns as `timestamp` for Nautilus parquet exports.
+  * `train_signal_xgb.compute_lstm_forecasts` vectorized via `sliding_window_view`, reducing full-dataset inference from ~30 minutes to ~2 minutes.
+
+---
 
 CREATE INDEX idx_ml_log_backtest 
 ON ml_optimization_log(backtest_id, timestamp);

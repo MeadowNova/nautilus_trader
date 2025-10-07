@@ -85,6 +85,9 @@ ib = [
 docker = [
     "docker>=7.1.0,<8.0.0",
 ]
+ccxt = [
+    "ccxt>=4.0.0,<5.0.0",
+]
 dydx = [
     "v4-proto==7.0.5",
     "grpcio==1.68.1",

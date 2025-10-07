@@ -6,9 +6,16 @@ This file contains the main strategy implementation that orchestrates
 all the advanced components.
 """
 
+from collections import deque
 from decimal import Decimal
 from typing import Optional
 import numpy as np
+from pathlib import Path
+
+import joblib
+from sklearn.preprocessing import StandardScaler
+from xgboost import XGBClassifier
+from tensorflow import keras
 
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.enums import OrderSide
@@ -20,7 +27,14 @@ from nautilus_trader.indicators import AverageTrueRange
 from nautilus_trader.indicators import RelativeStrengthIndex
 from nautilus_trader.model.data import BarType
 
-from .ai_adaptive_strategy import (
+from ajk_strategies.market_regime import MarketRegime as HMMMarketRegime
+from ajk_strategies.training.features import (
+    DEFAULT_IIR_A_COEFFS,
+    DEFAULT_IIR_B_COEFFS,
+    IIRFilter,
+)
+
+from ai_adaptive_strategy import (
     AIAdaptiveStrategyConfig,
     MultiLayerOptimizer,
     AdvancedPatternDetector,
@@ -54,6 +68,7 @@ class AIAdaptiveStrategy(Strategy):
         
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.instrument: Optional[Instrument] = None # Will be loaded in on_start
         
         # Indicators (initialized in on_start)
         self.fast_ema: Optional[ExponentialMovingAverage] = None
@@ -91,9 +106,39 @@ class AIAdaptiveStrategy(Strategy):
         
         # Signal tracking for ML
         self.last_signal_features = None
+
+        # External model artefacts & feature buffers
+        self.hmm_model = None
+        self.hmm_scaler: Optional[StandardScaler] = None
+        self.hmm_state_mapping = {}
+        self.hmm_feature_history: deque[list[float]] = deque(maxlen=500)
+        self.dsp_filter = IIRFilter(DEFAULT_IIR_B_COEFFS, DEFAULT_IIR_A_COEFFS)
+        self.return_history: deque[float] = deque(maxlen=2000)
+        self.scaled_return_history: deque[float] = deque(maxlen=5000)
+        self.previous_close: Optional[float] = None
+        self.latest_volatility: Optional[float] = None
+        self.latest_dsp_trend: Optional[float] = None
+        self.latest_lstm_forecast: Optional[float] = None
+        self.latest_regime_numeric: float = float(HMMMarketRegime.UNKNOWN.value)
+        self.lstm_model = None
+        self.lstm_input_scaler: Optional[StandardScaler] = None
+        self.lstm_target_scaler: Optional[StandardScaler] = None
+        self.lstm_sequence_length: int = 0
+        self.xgb_model: Optional[XGBClassifier] = None
+        self.xgb_scaler: Optional[StandardScaler] = None
+        self.xgb_numeric_columns = ("dsp_trend", "volatility", "lstm_forecast")
+        self.regime_vol_window = 30
+        self.latest_xgb_probs: Optional[np.ndarray] = None
         
     def on_start(self):
         """Initialize strategy components"""
+        # Load the instrument
+        self.instrument = self.cache.instrument(self.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
+
         # Initialize indicators
         self.fast_ema = ExponentialMovingAverage(self.current_fast_period)
         self.slow_ema = ExponentialMovingAverage(self.current_slow_period)
@@ -104,6 +149,8 @@ class AIAdaptiveStrategy(Strategy):
         # Subscribe to data
         bar_type = BarType.from_str(self.config.bar_type) if isinstance(self.config.bar_type, str) else self.config.bar_type
         self.subscribe_bars(bar_type)
+
+        self._load_models()
         
         self.log.info(
             f"🚀 AI-Adaptive Strategy Started\n"
@@ -154,6 +201,70 @@ class AIAdaptiveStrategy(Strategy):
         # Update risk metrics
         self._update_risk_metrics(bar)
     
+    def _load_models(self) -> None:
+        """Load external ML artefacts for regime detection and signal scoring."""
+        # HMM Regime Model
+        try:
+            hmm_path = Path(self.config.hmm_model_path).expanduser()
+            if not hmm_path.is_absolute():
+                hmm_path = Path.cwd() / hmm_path
+            if hmm_path.exists():
+                hmm_bundle = joblib.load(hmm_path)
+                if isinstance(hmm_bundle, tuple) and len(hmm_bundle) >= 3:
+                    self.hmm_model = hmm_bundle[0]
+                    self.hmm_scaler = hmm_bundle[1]
+                    summary = hmm_bundle[2]
+                    if isinstance(summary, dict):
+                        self.hmm_state_mapping = summary.get("state_mapping", {})
+                    self.log.info(f"Loaded HMM regime model from {hmm_path}")
+                else:
+                    self.log.warning(f"HMM bundle at {hmm_path} missing expected components; fallback to heuristic regimes.")
+            else:
+                self.log.warning(f"HMM model not found at {hmm_path}; using heuristic regimes.")
+        except Exception as exc:  # pragma: no cover - defensive
+            self.log.exception(f"Failed to load HMM model: {exc}")
+            self.hmm_model = None
+
+        # LSTM Forecast Model
+        try:
+            lstm_path = Path(self.config.lstm_model_path).expanduser()
+            if not lstm_path.is_absolute():
+                lstm_path = Path.cwd() / lstm_path
+            meta_path = Path(self.config.lstm_meta_path).expanduser()
+            if not meta_path.is_absolute():
+                meta_path = Path.cwd() / meta_path
+            if lstm_path.exists() and meta_path.exists():
+                self.lstm_model = keras.models.load_model(lstm_path, compile=False)
+                meta = joblib.load(meta_path)
+                self.lstm_input_scaler = meta.get("input_scaler")
+                self.lstm_target_scaler = meta.get("target_scaler")
+                self.lstm_sequence_length = int(meta.get("sequence_length", 0))
+                self.log.info(f"Loaded LSTM forecast model from {lstm_path}")
+            else:
+                self.log.warning("LSTM artefacts missing; forecasts disabled.")
+        except Exception as exc:  # pragma: no cover - defensive
+            self.log.exception(f"Failed to load LSTM model: {exc}")
+            self.lstm_model = None
+
+        # XGBoost Signal Aggregator
+        try:
+            xgb_path = Path(self.config.xgb_model_path).expanduser()
+            if not xgb_path.is_absolute():
+                xgb_path = Path.cwd() / xgb_path
+            if xgb_path.exists():
+                artifact = joblib.load(xgb_path)
+                if isinstance(artifact, dict) and "model" in artifact and "scaler" in artifact:
+                    self.xgb_model = artifact["model"]
+                    self.xgb_scaler = artifact["scaler"]
+                    self.log.info(f"Loaded XGBoost signal model from {xgb_path}")
+                else:
+                    self.log.warning(f"Unexpected XGB artifact format at {xgb_path}; using logistic fallback.")
+            else:
+                self.log.warning("XGBoost model not found; using logistic optimizer fallback.")
+        except Exception as exc:  # pragma: no cover - defensive
+            self.log.exception(f"Failed to load XGB model: {exc}")
+            self.xgb_model = None
+
     def _update_indicators(self, bar: Bar):
         """Update all indicators with new bar data"""
         price = bar.close.as_double()
@@ -173,6 +284,8 @@ class AIAdaptiveStrategy(Strategy):
         
         # Update regime detector
         self.regime_detector.update(price, volume)
+
+        self._update_ml_internals(price)
     
     def _indicators_ready(self) -> bool:
         """Check if all indicators are initialized"""
@@ -183,16 +296,119 @@ class AIAdaptiveStrategy(Strategy):
             self.rsi.initialized and
             self.atr.initialized
         )
+
+    def _update_ml_internals(self, price: float) -> None:
+        """Update streaming features used by external ML models."""
+        if self.dsp_filter is not None:
+            filtered_price = self.dsp_filter.apply(price)
+            prev_filtered = self.dsp_filter.y_hist[1] if len(self.dsp_filter.y_hist) > 1 else filtered_price
+            dsp_trend = 0.0
+            if filtered_price not in (0.0, None):
+                dsp_trend = (filtered_price - prev_filtered) / filtered_price if prev_filtered is not None else 0.0
+            self.latest_dsp_trend = float(np.clip(dsp_trend, -1.0, 1.0))
+
+        if self.previous_close is not None and self.previous_close != 0.0:
+            ret = (price - self.previous_close) / self.previous_close
+            self.return_history.append(ret)
+            if self.lstm_input_scaler is not None:
+                scaled_ret = self.lstm_input_scaler.transform(np.array([[ret]])).flatten()[0]
+                self.scaled_return_history.append(scaled_ret)
+        self.previous_close = price
+
+        if len(self.return_history) >= self.regime_vol_window:
+            recent_returns = list(self.return_history)[-self.regime_vol_window:]
+            self.latest_volatility = float(np.std(recent_returns))
+
+        if (
+            self.lstm_model is not None
+            and self.lstm_input_scaler is not None
+            and self.lstm_target_scaler is not None
+            and self.lstm_sequence_length > 0
+            and len(self.scaled_return_history) >= self.lstm_sequence_length
+        ):
+            window = np.array(list(self.scaled_return_history)[-self.lstm_sequence_length:])
+            lstm_input = window.reshape(1, self.lstm_sequence_length, 1)
+            pred_scaled = self.lstm_model.predict(lstm_input, verbose=0)[0][0]
+            forecast = self.lstm_target_scaler.inverse_transform(np.array([[pred_scaled]])).flatten()[0]
+            self.latest_lstm_forecast = float(forecast)
+
+        if self.latest_volatility is not None and self.latest_dsp_trend is not None:
+            self.hmm_feature_history.append([self.latest_volatility, self.latest_dsp_trend])
     
     def _update_market_regime(self):
         """Update current market regime"""
+        if (
+            self.hmm_model is not None
+            and self.hmm_scaler is not None
+            and len(self.hmm_feature_history) >= max(self.hmm_model.n_components, 10)
+        ):
+            features_array = np.array(self.hmm_feature_history)
+            scaled = self.hmm_scaler.transform(features_array)
+            states = self.hmm_model.predict(scaled)
+            state = int(states[-1])
+            hmm_label = self.hmm_state_mapping.get(state, HMMMarketRegime.UNKNOWN.value)
+            self.current_regime = self._map_hmm_to_strategy(hmm_label)
+            self.latest_regime_numeric = float(hmm_label)
+            try:
+                probs = self.hmm_model.predict_proba(scaled)[-1]
+                self.regime_confidence = float(np.max(probs))
+            except Exception:  # pragma: no cover - hmmlearn optional
+                self.regime_confidence = 0.6
+
+            self.log.info(
+                f"📊 Market Regime (HMM): {self.current_regime.value.upper()} "
+                f"(State {hmm_label}, Confidence: {self.regime_confidence:.2%})"
+            )
+            return
+
         regime = self.regime_detector.detect_regime()
         confidence = self.regime_detector.regime_confidence
+        self.current_regime = regime
+        self.regime_confidence = confidence
+        self.latest_regime_numeric = self._strategy_regime_to_numeric(regime)
         
         self.log.info(
             f"📊 Market Regime: {regime.value.upper()} "
             f"(Confidence: {confidence:.2%})"
         )
+    
+    def _map_hmm_to_strategy(self, hmm_label: int) -> MarketRegime:
+        try:
+            hmm_regime = HMMMarketRegime(hmm_label)
+        except ValueError:
+            return MarketRegime.UNKNOWN
+
+        mapping = {
+            HMMMarketRegime.LOW_VOL_BULL: MarketRegime.TRENDING_UP,
+            HMMMarketRegime.HIGH_VOL_BULL: MarketRegime.BREAKOUT,
+            HMMMarketRegime.LOW_VOL_BEAR: MarketRegime.TRENDING_DOWN,
+            HMMMarketRegime.HIGH_VOL_BEAR: MarketRegime.VOLATILE,
+            HMMMarketRegime.RANGING: MarketRegime.RANGING,
+            HMMMarketRegime.UNKNOWN: MarketRegime.UNKNOWN,
+        }
+        return mapping.get(hmm_regime, MarketRegime.UNKNOWN)
+
+    def _strategy_regime_to_numeric(self, regime: MarketRegime) -> float:
+        reverse_mapping = {
+            MarketRegime.TRENDING_UP: float(HMMMarketRegime.LOW_VOL_BULL.value),
+            MarketRegime.BREAKOUT: float(HMMMarketRegime.HIGH_VOL_BULL.value),
+            MarketRegime.TRENDING_DOWN: float(HMMMarketRegime.LOW_VOL_BEAR.value),
+            MarketRegime.VOLATILE: float(HMMMarketRegime.HIGH_VOL_BEAR.value),
+            MarketRegime.RANGING: float(HMMMarketRegime.RANGING.value),
+        }
+        return reverse_mapping.get(regime, float(HMMMarketRegime.UNKNOWN.value))
+
+    def _get_xgb_features(self) -> Optional[np.ndarray]:
+        if self.latest_dsp_trend is None or self.latest_volatility is None:
+            return None
+        regime_value = self.latest_regime_numeric
+        lstm_forecast = self.latest_lstm_forecast if self.latest_lstm_forecast is not None else 0.0
+        return np.array([
+            float(self.latest_dsp_trend),
+            float(self.latest_volatility),
+            float(lstm_forecast),
+            float(regime_value),
+        ], dtype=float)
     
     def _get_current_sentiment(self) -> float:
         """Get current market sentiment"""
@@ -243,20 +459,40 @@ class AIAdaptiveStrategy(Strategy):
         
         # Calculate combined signal using ML
         features = np.array([ema_signal, rsi_signal, pattern_signal, sentiment_signal])
-        signal_probability = self.ml_optimizer.logistic_regression_predict(features)
-        
+        logistic_probability = self.ml_optimizer.logistic_regression_predict(features)
+        signal_probability = logistic_probability
+        direction = OrderSide.BUY if ema_signal > 0 and rsi_signal > -0.9 else None
+
+        # Enhanced classifier via XGBoost (if available)
+        xgb_long_prob = None
+        if (
+            self.xgb_model is not None
+            and self.xgb_scaler is not None
+        ):
+            xgb_vector = self._get_xgb_features()
+            if xgb_vector is not None and direction is not None:
+                numeric = xgb_vector[:3].reshape(1, -1)
+                scaled_numeric = self.xgb_scaler.transform(numeric)
+                model_input = np.column_stack([scaled_numeric, [[xgb_vector[3]]]])
+                probs = self.xgb_model.predict_proba(model_input)[0]
+                self.latest_xgb_probs = probs
+                hold_prob, long_prob, short_prob = probs
+                xgb_long_prob = float(long_prob)
+                signal_probability = xgb_long_prob
+                if xgb_long_prob < self.config.xgb_long_threshold or xgb_long_prob <= float(short_prob):
+                    return
+            else:
+                # Insufficient data for XGB; fall back to logistic
+                self.latest_xgb_probs = None
+        else:
+            self.latest_xgb_probs = None
+
+        # Fallback threshold when relying on logistic regression
+        if direction is None or signal_probability < 0.51:
+            return
+
         # Store features for later learning
         self.last_signal_features = features
-        
-        # Determine if we should enter
-        if signal_probability < 0.6:  # Threshold for entry
-            return
-        
-        # Determine direction
-        if ema_signal > 0 and rsi_signal > -0.5:
-            direction = OrderSide.BUY
-        else:
-            return  # No clear signal
         
         # Get current market regime
         regime = self.regime_detector.current_regime
@@ -290,7 +526,14 @@ class AIAdaptiveStrategy(Strategy):
         )
         
         # Execute entry
-        self._execute_buy(bar, position_size, signal_probability, regime)
+        self._execute_buy(bar, position_size, signal_confidence, regime)
+
+        xgb_log_line = ""
+        if self.latest_xgb_probs is not None and xgb_long_prob is not None:
+            hold_prob, long_prob, short_prob = self.latest_xgb_probs
+            xgb_log_line = (
+                f"   XGB Probs → hold:{hold_prob:.2%} long:{long_prob:.2%} short:{short_prob:.2%}\n"
+            )
         
         self.log.info(
             f"🟢 ENTRY SIGNAL\n"
@@ -300,7 +543,8 @@ class AIAdaptiveStrategy(Strategy):
             f"   Pattern: {pattern_signal:.2f} | Sentiment: {sentiment:.2f}\n"
             f"   Regime: {regime.value} ({regime_confidence:.2%})\n"
             f"   Position Size: {position_size}\n"
-            f"   Stop Loss: {stop_loss:.2f} | Take Profit: {take_profit:.2f}"
+            f"   Stop Loss: {stop_loss:.2f} | Take Profit: {take_profit:.2f}\n"
+            f"{xgb_log_line}".rstrip()
         )
     
     def _get_ema_signal(self) -> float:
@@ -437,11 +681,10 @@ class AIAdaptiveStrategy(Strategy):
     
     def _execute_buy(self, bar: Bar, quantity: Decimal, signal_confidence: float, regime: MarketRegime):
         """Execute buy order and record entry"""
-        qty_str = f"{float(quantity):.5f}"
         order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_str(qty_str),
+            quantity=self.instrument.make_qty(quantity),
         )
         self.submit_order(order)
         
@@ -578,7 +821,7 @@ class AIAdaptiveStrategy(Strategy):
             if not self.portfolio.is_flat(self.instrument_id):
                 self.close_all_positions(self.instrument_id)
             
-            self.log.warn(f"🚨 CIRCUIT BREAKER TRIGGERED: {reason}")
+            self.log.warning(f"🚨 CIRCUIT BREAKER TRIGGERED: {reason}")
     
     def _check_resume_conditions(self):
         """Check if strategy should resume after pause"""

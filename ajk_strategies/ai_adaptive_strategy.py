@@ -126,6 +126,13 @@ class AIAdaptiveStrategyConfig(StrategyConfig, frozen=True):
     mc_simulations: int = 1000
     mc_confidence_level: float = 0.95
 
+    # External ML artefacts
+    hmm_model_path: str = "ajk_strategies/models/market_regime_hmm.pkl"
+    lstm_model_path: str = "ajk_strategies/models/price_forecast_lstm.h5"
+    lstm_meta_path: str = "ajk_strategies/models/price_forecast_lstm_meta.pkl"
+    xgb_model_path: str = "ajk_strategies/models/signal_aggregator_xgb.pkl"
+    xgb_long_threshold: float = 0.55
+
 
 # ==================== ADVANCED ML OPTIMIZER ====================
 
@@ -736,7 +743,7 @@ class AdvancedRiskManager:
         position_size = min(float(self.config.max_position_size), position_size)
         
         # Convert to Decimal with proper precision
-        return Decimal(f"{position_size:.5f}")
+        return Decimal(str(position_size))
     
     def monte_carlo_risk_assessment(
         self,

@@ -1,0 +1,20 @@
+groups:
+  - name: infrastructure
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: PostgreSQL exporter is reporting down
+          description: Postgres exporter has not been reachable for 2 minutes.
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Redis exporter is reporting down
+          description: Redis exporter has not been reachable for 2 minutes.

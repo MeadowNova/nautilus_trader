@@ -108,3 +108,30 @@ tests/test_data/**/backtest/**
 *.sh
 .env
 .env.local
+backtest_results/fills_AI_BTC_USD_20251007_075401.csv
+backtest_results/fills_AI_BTC_USD_20251007_075816.csv
+backtest_results/fills_AI_BTC_USD_20251007_080343.csv
+backtest_results/fills_AI_BTC_USD_20251007_080608.csv
+backtest_results/fills_AI_BTC_USD_20251007_083046.csv
+backtest_results/fills_AI_BTC_USD_20251007_092144.csv
+backtest_results/fills_AI_BTC_USD_20251007_093341.csv
+backtest_results/fills_AI_BTC_USD_20251007_093527.csv
+backtest_results/fills_BTC_USD_20251007_074224.csv
+backtest_results/positions_AI_BTC_USD_20251007_075401.csv
+backtest_results/positions_AI_BTC_USD_20251007_075816.csv
+backtest_results/positions_AI_BTC_USD_20251007_080343.csv
+backtest_results/positions_AI_BTC_USD_20251007_080608.csv
+backtest_results/positions_AI_BTC_USD_20251007_083046.csv
+backtest_results/positions_AI_BTC_USD_20251007_092144.csv
+backtest_results/positions_AI_BTC_USD_20251007_093341.csv
+backtest_results/positions_AI_BTC_USD_20251007_093527.csv
+backtest_results/positions_BTC_USD_20251007_074224.csv
+data/raw/kraken_csv/kraken_BTC_USD_1h_20240101_20250101.csv
+data/raw/kraken_csv/kraken_ETH_USD_1h_20240101_20250101.csv
+
+.serena/
+/home/ajk/Nautilus/nautilus_trader/.serena
+ai-working/
+ajk-strategies/
+ai-working/learning path/
+ai-working/learning path/research/
