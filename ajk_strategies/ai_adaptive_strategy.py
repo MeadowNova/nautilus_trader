@@ -130,7 +130,7 @@ class AIAdaptiveStrategyConfig(StrategyConfig, frozen=True):
     hmm_model_path: str = "ajk_strategies/models/market_regime_hmm.pkl"
     lstm_model_path: str = "ajk_strategies/models/price_forecast_lstm.h5"
     lstm_meta_path: str = "ajk_strategies/models/price_forecast_lstm_meta.pkl"
-    xgb_model_path: str = "ajk_strategies/models/signal_aggregator_xgb.pkl"
+    xgb_model_path: str = "ajk_strategies/models/signal_aggregator_xgb_gpu.pkl"
     xgb_long_threshold: float = 0.55
 
     # Redis cache integration

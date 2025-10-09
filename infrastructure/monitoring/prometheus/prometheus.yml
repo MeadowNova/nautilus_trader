@@ -9,15 +9,16 @@ scrape_configs:
 
   - job_name: 'postgres'
     static_configs:
-      - targets: ['postgres-exporter:9187']
+      - targets: ['postgres_exporter:9187']
 
   - job_name: 'redis'
     static_configs:
-      - targets: ['redis-exporter:9121']
+      - targets: ['redis_exporter:9121']
 
-  - job_name: 'ai-adaptive-metrics'
+  - job_name: 'ai-adaptive-metrics-v2'
     scrape_interval: 30s
+    scrape_timeout: 30s
     static_configs:
-      - targets: ['host.docker.internal:8000']
+      - targets: ['ai_metrics_proxy:9101']
         labels:
           service: 'ai_metrics'

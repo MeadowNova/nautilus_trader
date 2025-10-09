@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-path",
         type=Path,
-        default=Path("ajk_strategies/models/signal_aggregator_xgb.pkl"),
+        default=Path("ajk_strategies/models/signal_aggregator_xgb_gpu.pkl"),
     )
     return parser.parse_args()
 

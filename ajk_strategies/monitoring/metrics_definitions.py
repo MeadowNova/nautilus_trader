@@ -74,6 +74,42 @@ REDIS_KEY_COUNT = Gauge(
     registry=REGISTRY,
 )
 
+# GPU validation metrics ---------------------------------------------------
+GPU_VALIDATION_TRADES = Gauge(
+    "ai_gpu_validation_total_trades",
+    "Total trades recorded in a GPU validation summary file.",
+    ["summary_file", "instrument", "device"],
+    registry=REGISTRY,
+)
+
+GPU_VALIDATION_PNL = Gauge(
+    "ai_gpu_validation_net_pnl",
+    "Net PnL captured in the GPU validation summary.",
+    ["summary_file", "instrument", "device"],
+    registry=REGISTRY,
+)
+
+GPU_VALIDATION_RUNTIME = Gauge(
+    "ai_gpu_validation_runtime_seconds",
+    "Runtime spent executing the GPU validation summary.",
+    ["summary_file", "instrument", "device"],
+    registry=REGISTRY,
+)
+
+GPU_VALIDATION_SEGMENTS = Gauge(
+    "ai_gpu_validation_segments",
+    "Number of segments aggregated in the GPU validation summary.",
+    ["summary_file"],
+    registry=REGISTRY,
+)
+
+GPU_VALIDATION_LAST_COMPLETED = Gauge(
+    "ai_gpu_validation_last_completed_timestamp",
+    "Unix timestamp for the latest segment completion in the summary.",
+    ["summary_file"],
+    registry=REGISTRY,
+)
+
 # Exposed objects for import convenience.
 __all__ = [
     "REGISTRY",
@@ -87,4 +123,9 @@ __all__ = [
     "REDIS_UP",
     "REDIS_MEMORY_USAGE",
     "REDIS_KEY_COUNT",
+    "GPU_VALIDATION_TRADES",
+    "GPU_VALIDATION_PNL",
+    "GPU_VALIDATION_RUNTIME",
+    "GPU_VALIDATION_SEGMENTS",
+    "GPU_VALIDATION_LAST_COMPLETED",
 ]

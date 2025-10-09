@@ -344,24 +344,21 @@ def run_backtest(
     result_prefix = f"{instrument_symbol.replace('/', '-')}_{scenario_name}_{timestamp}"
 
     fills_report = engine.trader.generate_order_fills_report()
-    if fills_report:
+    if fills_report is not None and not getattr(fills_report, "empty", False):
         fills_path = results_dir / f"fills_{result_prefix}.csv"
-        with open(fills_path, "w") as file:
-            file.write(fills_report)
+        fills_report.to_csv(fills_path, index=False)
         print(f"💾 Fills saved to: {fills_path}")
 
     positions_report = engine.trader.generate_positions_report()
-    if positions_report:
+    if positions_report is not None and not getattr(positions_report, "empty", False):
         positions_path = results_dir / f"positions_{result_prefix}.csv"
-        with open(positions_path, "w") as file:
-            file.write(positions_report)
+        positions_report.to_csv(positions_path, index=False)
         print(f"💾 Positions saved to: {positions_path}")
 
     orders_report = engine.trader.generate_orders_report()
-    if orders_report:
+    if orders_report is not None and not getattr(orders_report, "empty", False):
         orders_path = results_dir / f"orders_{result_prefix}.csv"
-        with open(orders_path, "w") as file:
-            file.write(orders_report)
+        orders_report.to_csv(orders_path, index=False)
         print(f"💾 Orders saved to: {orders_path}")
 
     summary = {
@@ -406,7 +403,7 @@ def run_backtest(
                     / "price_forecast_lstm_meta.pkl"
                 ),
                 "signal_aggregator_xgb": (
-                    project_root / "ajk_strategies" / "models" / "signal_aggregator_xgb.pkl"
+                    project_root / "ajk_strategies" / "models" / "signal_aggregator_xgb_gpu.pkl"
                 ),
             }
             model_versions: dict[str, dict[str, str]] = {}
@@ -454,6 +451,7 @@ def run_backtest(
                             backtest_run_id=backtest_id,
                             metric_name=metric_name,
                             metric_value=float(metric_value),
+                            recorded_at=end_time,
                         )
                     )
             if metric_records:

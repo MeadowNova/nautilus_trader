@@ -108,12 +108,13 @@ less OPERATIONS_GUIDE.md  # Complete guide
 
 ---
 
-### 6. Model Artefacts & Monitoring (Updated 2025-10-07)
+### 6. Model Artefacts & Monitoring (Updated 2025-10-09)
 - ✅ **Production ML Bundle Deployed** in `ajk_strategies/models/`
   - `market_regime_hmm.pkl` — 2,262,971 rows, state counts `[57,896, 1,011,601, 1, 1,193,472, 1]`
   - `price_forecast_lstm.h5` — Validation MSE ≈ 0.83754 (epoch 5)
   - `price_forecast_lstm_meta.pkl` — Scalers + sequence length metadata
-  - `signal_aggregator_xgb.pkl` — Class distribution `[629,103, 819,741, 814,091]`
+- `signal_aggregator_xgb_gpu.pkl` — Class distribution `[629,103, 819,741, 814,091]`
+  - Segmented GPU validations now aggregate 16 closed trades across 20×50k slices (`backtest_results/gpu_validation_50k_summary.json`); Prometheus gauges (`ai_gpu_validation_*`) ingest the JSON for Grafana panels (trades/runtime/PnL/last completed).
 - ✅ **Integration Status**
   - `ai_adaptive_strategy_main.py` now loads HMM/LSTM/XGB at start and streams DSP/volatility features
   - Backtest smoke test (`python ajk_strategies/run_backtest_with_real_data.py --max-bars 5000`) completed with live HMM logs
@@ -121,7 +122,7 @@ less OPERATIONS_GUIDE.md  # Complete guide
   - `30cc229f62a8c03f0bbd4d4176f84fc51e5d55a5050708fcc48c1f15544a9afc`  market_regime_hmm.pkl
   - `7ebe9a9d729afc337b483bae360055801e85824e7ecf5a605f8168fdea18a460`  price_forecast_lstm.h5
   - `0cc837add39da846d9d108d85af4ff9b93e3db3c7d6bc824ddd5835ff85cda50`  price_forecast_lstm_meta.pkl
-  - `5789e06b0b5d77432f58dac9c42b0a5b8fa44e2d3e198216968fc3b5d02e77d2`  signal_aggregator_xgb.pkl
+  - `682143667c32d55ce786515847fc33a6ea01a6bd51911da1ed669cce36091849`  signal_aggregator_xgb_gpu.pkl
 - ✅ **Monitoring Hook Points**
   - Prometheus exporter to emit `model_artifact_info` gauge (hash + timestamp) — pending automation
   - Grafana dashboard Phase 5 will surface model freshness + validation metrics
@@ -130,6 +131,15 @@ less OPERATIONS_GUIDE.md  # Complete guide
   - `NAUTILUS_PERSIST_BACKTESTS=1` → real-data backtests log outcomes to Postgres (`ai_extensions.backtest_runs`)
   - `NAUTILUS_ENABLE_REDIS_CACHE=1` or `AIAdaptiveStrategyConfig.enable_redis_cache=True` → strategy publishes state snapshots & model metadata to Redis (`ajk_strategies/cache/redis_manager.py`)
   - Redis endpoints pull from `.env.local` (`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`); default compose ports 6378→6379 already provisioned
+- ✅ **Monitoring validation (2025-10-09)**
+  - Prometheus now runs on the shared `nautilus_network` (see `infrastructure/docker/docker-compose.yml`), scraping exporters via service DNS; inside the container `up{job="ai-adaptive-metrics-v2"}` and the Postgres/Redis jobs evaluate to `1`.
+  - Metrics exporter re-launched with `.env.local` credentials (`ai_metrics`/`ai_metrics_proxy` compose services); Redis authentication errors cleared.
+  - Grafana auto-loads the new dashboards under `infrastructure/monitoring/grafana/dashboards/` (`ai-executive-overview.json`, `ai-strategy-performance.json`, `ai-ml-optimisation.json`, `ai-regime-analysis.json`, `ai-pattern-detection.json`, `ai-risk-monitoring.json`, `ai-sentiment-tracking.json`, `ai-trade-analytics.json`).
+  - Host machine still runs an older Prometheus process on `:9090`; until that listener is stopped, local `curl http://localhost:9090` will show the legacy config even though the compose-managed instance is healthy.
+- ✅ **Backtest persistence validation (2025-10-09)**
+  - Patched `ajk_strategies/run_backtest_with_real_data.py` to emit CSV reports via `DataFrame.to_csv` and stamp `recorded_at` when recording `ai_extensions.backtest_metrics`.
+  - Ran constrained BTC/ETH scenarios (`run_name` values `BTC-USDT_metrics_validation_20251009_173726`, `ETH-USDT_metrics_validation_20251009_174233`), confirming inserts via `SELECT run_name, completed_at FROM ai_extensions.backtest_runs ORDER BY completed_at DESC LIMIT 5;`.
+  - Verified metric rows with `SELECT metric_name, metric_value FROM ai_extensions.backtest_metrics WHERE backtest_run_id='<latest>'` returning eight metrics per run (bars_processed through profit_factor). Zero-trade outcome is expected for the reduced bar sample.
 
 ## 📊 Service URLs
 

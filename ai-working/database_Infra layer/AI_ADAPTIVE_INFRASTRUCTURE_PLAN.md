@@ -787,6 +787,38 @@ docker exec nautilus_postgres psql -U nautilus -d nautilus_trader -c "\dt"
 1. **Monitoring bring-up**: `docker compose --env-file infrastructure/.env.local up -d prometheus grafana`; add Postgres exporter (training/backtest tables) + Redis exporter (cache hit/miss, TTL) and ship base Grafana dashboards for run health.
 2. **Backtest persistence validation**: schedule a constrained BTC/ETH backtest (smaller lookback) under `NAUTILUS_PERSIST_BACKTESTS=1` to populate `ai_extensions.backtest_runs` + `backtest_metrics`, and document verification queries.
 3. **Prometheus exporters & alerts**: expose `model_artifact_info`, `training_run_status`, and Redis saturation metrics; define alert thresholds (stale models, cache misses, failed inserts) for the forthcoming dashboards.
+4. **GPU-accelerated strategy runs**: confirm `AIAdaptiveStrategyV3` loads the TensorFlow LSTM on CUDA, falls back cleanly to CPU, and halts processing after 50k bars when batching real-data backtests.
+5. **Promote GPU artefacts**: wire `signal_aggregator_xgb_gpu.pkl` into live configs, surface `gpu_validation_50k_summary.json` in Grafana, and plan follow-up runs with real trade flow.
+
+• Calibrated GPU Runs
+
+  - ajk_strategies/run_backtest_v3_gpu_validation.py:70-205 now supports segmented execution (--segments, --max-hold-bars, --feature-warmup-bars, --max-hold-bars) plus off‑set slicing so we can
+    march through the 2.2 M bar archive in 50 k chunks. Running --segments 20 --max-bars 50000 --max-hold-bars 20 --feature-warmup-bars 50 produces 16 closed trades (223 orders) in ~20.7 s with 28 %
+    peak GPU utilisation; the aggregated metrics live in backtest_results/gpu_validation_50k_summary.json.
+  - SignalFeatureEngine and AIAdaptiveStrategyV3 have been hardened (ajk_strategies/ai_adaptive_stragey_v3.py:142-509): CUDA/CPU fallback for the LSTM, configurable warmup, trade-cycle
+    instrumentation, and deterministic exit timers deliver stable re-entry behaviour so longer slices now emit enough trades for Sharpe/profit-factor validation.
+  - We captured an additional 10×200 k-bar validation (backtest_results/gpu_validation_200k_summary.json, 5 closed trades) to benchmark longer windows.
+
+  Grafana Integration
+
+  - Prometheus gauges (ai_gpu_validation_total_trades, ai_gpu_validation_runtime_seconds, ai_gpu_validation_net_pnl, ai_gpu_validation_segments, ai_gpu_validation_last_completed_timestamp) are
+    exposed via metrics_collector._refresh_gpu_validation (ajk_strategies/monitoring/metrics_collector.py:14-220, metrics_definitions.py:31-63). Each summary JSON in backtest_results/ now feeds live
+    telemetry without manual edits.
+  - The “AI Strategy Performance” dashboard was updated (infrastructure/monitoring/grafana/dashboards/ai-strategy-performance.json) to replace the static GPU text panel with four Prometheus-backed
+    stat cards (trades, runtime, net PnL, segment count) driven by the new metrics.
+
+  Artifacts & Metrics
+
+  - Latest aggregated JSON summaries: backtest_results/gpu_validation_50k_summary.json (20×50 k slices → trades = 16, runtime ≈ 20.68 s, GPU util 28 %) and backtest_results/
+    gpu_validation_200k_summary.json (10×200 k slices → trades = 5, GPU util 24 %). Each segment’s metadata (offset, runtime, completed_at) is preserved under segment_details for drill-downs.
+  - GPU validation counters, exits, and probability ceilings are logged per run for quick diagnostics (backtest_gpu_validation.log and /tmp/backtest_gpu_latest.out during execution).
+
+  Next Steps
+
+  1. Verify the new Prometheus gauges from ajk_strategies.monitoring.metrics_server (run with the usual DB/Redis env) and refresh Grafana to confirm the stat cards populate.
+  2. Tune the scaler/feature mix so aggregated PnL remains realistic (current segmentation sums raw PnL across slices); consider normalising by segments or switching to median PnL before paper/
+     live promotion.
+
 
 ### Pre-Paper-Trading Checklist
 1. Populate exchange credentials in `.env.local` (Bybit/OKX testnets) and align adapter configs with `docs/api_reference/adapters` connection parameters; smoke-test CCXT connectivity via `ajk_strategies/ccxt_live_data.py`.
