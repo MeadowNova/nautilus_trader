@@ -2,19 +2,22 @@
 """
 AI-Adaptive Strategy Backtest with Real Parquet Data
 
-Runs comprehensive backtest using prepared BTC-USDT and ETH-USDT data
+Runs comprehensive backtest using prepared BTC-USDT and ETH-USDT data.
 """
 
+import logging
+import os
 import sys
 from pathlib import Path
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 import pyarrow as pa
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(Path(__file__).parent))
 
 from nautilus_trader.backtest.engine import BacktestEngine, BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -28,6 +31,14 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 from ajk_strategies.ai_adaptive_strategy_main import AIAdaptiveStrategy
 from ajk_strategies.ai_adaptive_strategy import AIAdaptiveStrategyConfig
+from ajk_strategies.persistence import (
+    BacktestMetricRecord,
+    BacktestRunRecord,
+    PostgresPersistenceClient,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 def create_instrument(symbol: str, venue: str):
@@ -48,152 +59,124 @@ def run_backtest(
     slow_ema: int = 21,
     enable_ml: bool = True,
     use_sentiment: bool = True,
-    max_bars: int = 50000,  # Limit bars for faster testing
+    max_bars: int = 50000,
+    log_level: str = "INFO",
 ):
-    """
-    Run backtest on real Parquet data
-    
-    Args:
-        instrument_symbol: "BTC-USDT" or "ETH-USDT"
-        scenario_name: Name of the scenario
-        fast_ema: Fast EMA period
-        slow_ema: Slow EMA period
-        enable_ml: Enable ML optimization
-        use_sentiment: Use sentiment analysis
-        max_bars: Maximum bars to backtest (for speed)
-    """
-    
-    print(f"\n{'='*80}")
-    print(f"🚀 AI-ADAPTIVE STRATEGY BACKTEST: {instrument_symbol}")
-    print(f"   Scenario: {scenario_name}")
-    print(f"{'='*80}")
-    print(f"Configuration:")
-    print(f"  - Instrument: {instrument_symbol}")
-    print(f"  - Fast EMA: {fast_ema}")
-    print(f"  - Slow EMA: {slow_ema}")
-    print(f"  - ML Optimization: {enable_ml}")
-    print(f"  - Sentiment Analysis: {use_sentiment}")
-    print(f"  - Max Bars: {max_bars:,}")
-    print()
-    
-    # Determine venue and base currency
-    venue_name = "BINANCE"  # Use BINANCE for test instruments
+    """Run an AI-Adaptive backtest on real Parquet data."""
+
+    log_level_upper = log_level.upper()
+    verbose = log_level_upper == "INFO"
+    info = print if verbose else (lambda *args, **kwargs: None)
+
+    info(f"\n{'='*80}")
+    info(f"🚀 AI-ADAPTIVE STRATEGY BACKTEST: {instrument_symbol}")
+    info(f"   Scenario: {scenario_name}")
+    info(f"{'='*80}")
+    info("Configuration:")
+    info(f"  - Instrument: {instrument_symbol}")
+    info(f"  - Fast EMA: {fast_ema}")
+    info(f"  - Slow EMA: {slow_ema}")
+    info(f"  - ML Optimization: {enable_ml}")
+    info(f"  - Sentiment Analysis: {use_sentiment}")
+    info(
+        "  - Max Bars: {}".format("All" if not max_bars else f"{max_bars:,}")
+    )
+    info("")
+
+    venue_name = "BINANCE"
     if instrument_symbol == "BTC-USDT":
         base_currency = BTC
         starting_base = 10.0
         parquet_file = project_root / "data" / "nautilus" / "BTC-USDT-1-MINUTE.parquet"
-    else:  # ETH-USDT
+    else:
         base_currency = ETH
         starting_base = 100.0
         parquet_file = project_root / "data" / "nautilus" / "ETH-USDT-1-MINUTE.parquet"
-    
-    # Create instrument
+
     instrument = create_instrument(instrument_symbol, venue_name)
-    print(f"📂 Loading data...")
-    print(f"   ✓ Created instrument: {instrument.id}")
-    print(f"   ✓ Data file: {parquet_file.name}")
-    
-    # Load bars directly from Parquet file
+    info("📂 Loading data...")
+    info(f"   ✓ Created instrument: {instrument.id}")
+    info(f"   ✓ Data file: {parquet_file.name}")
+
+    from nautilus_trader.persistence.wranglers import BarDataWrangler
+    import pyarrow.parquet as pq
+
     try:
-        from nautilus_trader.persistence.wranglers import BarDataWrangler
-        import pyarrow.parquet as pq
-        
-        # Read parquet file
         table = pq.read_table(str(parquet_file))
-        total_bars = table.num_rows
-        
-        # Filter to specific date range for more volatile period
-        # 2024-2025: Recent bull run with more price action
         df_full = table.to_pandas()
-        df_full['date'] = pd.to_datetime(df_full['ts_event'], unit='ms', utc=True)
-        
-        # Use 2024 data - more volatility and trending behavior
-        start_date = pd.Timestamp('2024-01-01', tz='UTC')
-        end_date = pd.Timestamp('2024-12-31', tz='UTC')
-        df_filtered = df_full[(df_full['date'] >= start_date) & (df_full['date'] <= end_date)]
-        
-        # Limit to max_bars if needed
-        if len(df_filtered) > max_bars:
-            print(f"   ℹ️  Using 2024 data, limiting to first {max_bars:,} bars (out of {len(df_filtered):,})")
+        df_full["date"] = pd.to_datetime(df_full["ts_event"], unit="ms", utc=True)
+
+        start_date = pd.Timestamp("2024-01-01", tz="UTC")
+        end_date = pd.Timestamp("2024-12-31", tz="UTC")
+        df_filtered = df_full[
+            (df_full["date"] >= start_date) & (df_full["date"] <= end_date)
+        ]
+
+        if max_bars and len(df_filtered) > max_bars:
+            info(
+                "   ℹ️  Using 2024 data, limiting to first "
+                f"{max_bars:,} bars (out of {len(df_filtered):,})"
+            )
             df_filtered = df_filtered.head(max_bars)
         else:
-            print(f"   ℹ️  Using all 2024 data: {len(df_filtered):,} bars")
-        
-        # Convert back to table format
-        table = pa.Table.from_pandas(df_filtered.drop('date', axis=1))
-        
-        # Convert to DataFrame for wrangling
+            info(f"   ℹ️  Using all 2024 data: {len(df_filtered):,} bars")
+
+        table = pa.Table.from_pandas(df_filtered.drop("date", axis=1))
         df = table.to_pandas()
-        
-        # Convert numeric columns to float
-        numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+
+        numeric_cols = ["open", "high", "low", "close", "volume"]
         for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        # Set ts_event as the index (datetime index required by wrangler)
-        df['timestamp'] = pd.to_datetime(df['ts_event'], unit='ms', utc=True)
-        df = df.set_index('timestamp')
-        
-        # Keep only the OHLCV columns needed by wrangler
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        df["timestamp"] = pd.to_datetime(df["ts_event"], unit="ms", utc=True)
+        df = df.set_index("timestamp")
         df = df[numeric_cols]
-        
-        # Create wrangler
-        # Format: SYMBOL.VENUE-STEP-AGGREGATION-PRICECOMPONENT-AGGREGATIONSOURCE
-        # Example: BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL
-        # Use EXTERNAL since bars come from external data file
+
         bar_type_str = f"{instrument.id}-1-MINUTE-LAST-EXTERNAL"
         wrangler = BarDataWrangler(
             bar_type=BarType.from_str(bar_type_str),
             instrument=instrument,
         )
-        
-        # Process bars
+
         bars = wrangler.process(df)
-        
-        print(f"   ✓ Loaded {len(bars):,} bars")
-        if len(bars) > 0:
-            print(f"   ℹ️  First bar: {bars[0].ts_event}")
-            print(f"   ℹ️  Last bar: {bars[-1].ts_event}")
-        
-    except Exception as e:
-        print(f"   ❌ Error loading data: {e}")
+
+        info(f"   ✓ Loaded {len(bars):,} bars")
+        if bars:
+            info(f"   ℹ️  First bar: {bars[0].ts_event}")
+            info(f"   ℹ️  Last bar: {bars[-1].ts_event}")
+
+    except Exception as exc:  # noqa: BLE001
+        print(f"   ❌ Error loading data: {exc}")
         import traceback
+
         traceback.print_exc()
         return None
-    
-    # Configure backtest engine
+
     config = BacktestEngineConfig(
         trader_id=TraderId(f"AI-ADAPTIVE-{instrument_symbol}-{scenario_name.upper()}"),
-        logging=LoggingConfig(log_level="INFO"),
+        logging=LoggingConfig(log_level=log_level_upper),
     )
-    
-    # Create engine
+
     engine = BacktestEngine(config=config)
-    
-    # Add venue
-    VENUE = Venue(venue_name)
+
     engine.add_venue(
-        venue=VENUE,
+        venue=Venue(venue_name),
         oms_type=OmsType.NETTING,
         account_type=AccountType.CASH,
         base_currency=None,
         starting_balances=[
-            Money(100_000, USDT),  # Start with $100k USDT
-            Money(Decimal(str(starting_base)), base_currency),  # Some base currency
+            Money(100_000, USDT),
+            Money(Decimal(str(starting_base)), base_currency),
         ],
     )
-    
-    # Add instrument
+
     engine.add_instrument(instrument)
-    
-    # Add bars to engine
-    print("⚙️  Adding data to backtest engine...")
+
+    info("⚙️  Adding data to backtest engine...")
     engine.add_data(bars)
-    
-    # Configure strategy
-    # IMPORTANT: Must include aggregation source (-EXTERNAL) for proper parsing
+
     bar_type_str = f"{instrument.id}-1-MINUTE-LAST-EXTERNAL"
-    
+
     strategy_config = AIAdaptiveStrategyConfig(
         instrument_id=str(instrument.id),
         bar_type=bar_type_str,
@@ -209,13 +192,13 @@ def run_backtest(
         stop_loss_atr_multiplier=2.0,
         take_profit_atr_multiplier=3.0,
         trailing_stop_atr_multiplier=1.5,
-        max_hold_seconds=7200,  # 2 hours
+        max_hold_seconds=7200,
         max_daily_loss_pct=0.05,
         max_drawdown_pct=0.10,
         min_win_rate=0.35,
         max_consecutive_losses=5,
         enable_ml_optimization=enable_ml,
-        optimization_interval=100,  # Optimize every 100 bars
+        optimization_interval=100,
         learning_rate=0.01,
         use_sentiment=use_sentiment,
         sentiment_weight=0.25,
@@ -224,101 +207,112 @@ def run_backtest(
         mc_simulations=1000,
         mc_confidence_level=0.95,
     )
-    
-    # Add strategy
-    print("🎯 Initializing AI-Adaptive Strategy...")
+
+    info("🎯 Initializing AI-Adaptive Strategy...")
     strategy = AIAdaptiveStrategy(config=strategy_config)
     engine.add_strategy(strategy)
-    
-    # Run backtest
-    print("⚡ Running backtest...\n")
-    start_time = datetime.now()
-    
+
+    info("⚡ Running backtest...\n")
+    start_time = datetime.now(timezone.utc)
+    end_time = start_time
+    duration = 0.0
+
     try:
         engine.run()
-        end_time = datetime.now()
+        end_time = datetime.now(timezone.utc)
         duration = (end_time - start_time).total_seconds()
-        
-        print(f"\n✅ Backtest completed in {duration:.2f} seconds")
-        
-    except Exception as e:
-        print(f"\n❌ Backtest failed: {e}")
+        info(f"\n✅ Backtest completed in {duration:.2f} seconds")
+    except Exception as exc:  # noqa: BLE001
+        print(f"\n❌ Backtest failed: {exc}")
         import traceback
+
         traceback.print_exc()
         return None
-    
-    # Analyze Results
+
     print(f"\n{'='*80}")
     print(f"📊 PERFORMANCE RESULTS: {instrument_symbol} - {scenario_name}")
     print(f"{'='*80}")
-    
-    # Get account info
+
     accounts = list(engine.cache.accounts())
     if not accounts:
         print("❌ No account data available")
         return None
-    
+
     account = accounts[0]
-    
-    print(f"\n💰 Final Account Balance:")
+
+    print("\n💰 Final Account Balance:")
     starting_usdt = 100_000.0
-    final_balances = {}
-    
+    final_balances: dict[str, float] = {}
+
     for balance in account.balances().values():
         final_balances[str(balance.currency)] = float(balance.total)
         print(f"   {balance.currency}: {balance.total}")
-    
-    # Calculate total equity in USDT
-    final_usdt = final_balances.get('USDT', 0)
-    
-    # Get final price to value base currency
-    if len(bars) > 0:
-        final_price = float(bars[-1].close)  # bars is a list of Bar objects
-        base_amount = final_balances.get(str(base_currency), 0)
+
+    final_usdt = final_balances.get("USDT", 0.0)
+    base_amount = final_balances.get(str(base_currency), 0.0)
+
+    if bars:
+        final_price = float(bars[-1].close)
         base_value_usdt = base_amount * final_price
         total_equity = final_usdt + base_value_usdt
     else:
+        base_value_usdt = 0.0
         total_equity = final_usdt
-    
+
     pnl = total_equity - starting_usdt
-    pnl_pct = (pnl / starting_usdt) * 100
-    
-    print(f"\n📈 P&L Summary:")
+    pnl_pct = (pnl / starting_usdt) * 100 if starting_usdt else 0.0
+
+    print("\n📈 P&L Summary:")
     print(f"   Starting Balance: ${starting_usdt:,.2f} USDT")
     print(f"   Final Balance: ${final_usdt:,.2f} USDT")
     if base_amount > 0:
         print(f"   {base_currency} Holdings: {base_amount:.8f} (${base_value_usdt:,.2f})")
     print(f"   Total Equity: ${total_equity:,.2f}")
     print(f"   Net P&L: ${pnl:,.2f} ({pnl_pct:+.2f}%)")
-    
-    # Get trading statistics
+
     orders = list(engine.cache.orders())
     positions = list(engine.cache.positions())
-    closed_positions = [p for p in positions if p.is_closed]
-    
-    print(f"\n📊 Trading Statistics:")
+    closed_positions = [position for position in positions if position.is_closed]
+
+    print("\n📊 Trading Statistics:")
     print(f"   Total Orders: {len(orders)}")
     print(f"   Total Positions: {len(positions)}")
     print(f"   Closed Positions: {len(closed_positions)}")
-    
+
+    win_rate = 0.0
+    profit_factor = 0.0
+
     if closed_positions:
-        winning_positions = [p for p in closed_positions if p.realized_pnl and float(p.realized_pnl) > 0]
-        losing_positions = [p for p in closed_positions if p.realized_pnl and float(p.realized_pnl) < 0]
-        
+        winning_positions = [
+            p for p in closed_positions if p.realized_pnl and float(p.realized_pnl) > 0
+        ]
+        losing_positions = [
+            p for p in closed_positions if p.realized_pnl and float(p.realized_pnl) < 0
+        ]
+
         wins = len(winning_positions)
         losses = len(losing_positions)
         total_trades = wins + losses
-        
+
         if total_trades > 0:
             win_rate = (wins / total_trades) * 100
-            
-            total_realized_pnl = sum(float(p.realized_pnl) for p in closed_positions if p.realized_pnl)
-            
-            avg_win = sum(float(p.realized_pnl) for p in winning_positions if p.realized_pnl) / wins if wins > 0 else 0
-            avg_loss = sum(float(p.realized_pnl) for p in losing_positions if p.realized_pnl) / losses if losses > 0 else 0
-            
-            profit_factor = abs(avg_win / avg_loss) if avg_loss != 0 else 0
-            
+
+            total_realized_pnl = sum(
+                float(p.realized_pnl) for p in closed_positions if p.realized_pnl
+            )
+            avg_win = (
+                sum(float(p.realized_pnl) for p in winning_positions if p.realized_pnl) / wins
+                if wins > 0
+                else 0.0
+            )
+            avg_loss = (
+                sum(float(p.realized_pnl) for p in losing_positions if p.realized_pnl) / losses
+                if losses > 0
+                else 0.0
+            )
+
+            profit_factor = abs(avg_win / avg_loss) if avg_loss != 0 else 0.0
+
             print(f"   Winning Trades: {wins}")
             print(f"   Losing Trades: {losses}")
             print(f"   Win Rate: {win_rate:.2f}%")
@@ -326,84 +320,158 @@ def run_backtest(
             print(f"   Average Win: ${avg_win:,.2f}")
             print(f"   Average Loss: ${avg_loss:,.2f}")
             print(f"   Profit Factor: {profit_factor:.2f}")
-            
-            # Calculate Sharpe Ratio (simplified)
-            pnl_list = [float(p.realized_pnl) for p in closed_positions if p.realized_pnl]
+
+            pnl_list = [
+                float(p.realized_pnl) for p in closed_positions if p.realized_pnl
+            ]
             if len(pnl_list) > 1:
                 import numpy as np
+
                 returns_mean = np.mean(pnl_list)
                 returns_std = np.std(pnl_list)
-                sharpe = (returns_mean / returns_std) * np.sqrt(252) if returns_std > 0 else 0
+                sharpe = (returns_mean / returns_std) * np.sqrt(252) if returns_std > 0 else 0.0
                 print(f"   Sharpe Ratio: {sharpe:.2f}")
-    
+
     print(f"{'='*80}\n")
-    
-    # Save results to files
+
     from pathlib import Path
     import json
-    
+
     results_dir = Path("/home/ajk/Nautilus/nautilus_trader/backtest_results")
     results_dir.mkdir(parents=True, exist_ok=True)
-    
+
     timestamp = start_time.strftime("%Y%m%d_%H%M%S")
     result_prefix = f"{instrument_symbol.replace('/', '-')}_{scenario_name}_{timestamp}"
-    
-    # Save fills report
+
     fills_report = engine.trader.generate_order_fills_report()
     if fills_report:
         fills_path = results_dir / f"fills_{result_prefix}.csv"
-        with open(fills_path, 'w') as f:
-            f.write(fills_report)
+        with open(fills_path, "w") as file:
+            file.write(fills_report)
         print(f"💾 Fills saved to: {fills_path}")
-    
-    # Save positions report  
+
     positions_report = engine.trader.generate_positions_report()
     if positions_report:
         positions_path = results_dir / f"positions_{result_prefix}.csv"
-        with open(positions_path, 'w') as f:
-            f.write(positions_report)
+        with open(positions_path, "w") as file:
+            file.write(positions_report)
         print(f"💾 Positions saved to: {positions_path}")
-    
-    # Save orders report
+
     orders_report = engine.trader.generate_orders_report()
     if orders_report:
         orders_path = results_dir / f"orders_{result_prefix}.csv"
-        with open(orders_path, 'w') as f:
-            f.write(orders_report)
+        with open(orders_path, "w") as file:
+            file.write(orders_report)
         print(f"💾 Orders saved to: {orders_path}")
-    
-    # Save summary JSON
+
     summary = {
-        'instrument': instrument_symbol,
-        'scenario': scenario_name,
-        'timestamp': timestamp,
-        'date_range': '2024-01-01 to 2024-12-31',
-        'bars_processed': len(bars),
-        'duration_seconds': duration if 'duration' in locals() else 0,
-        'total_equity': float(total_equity),
-        'net_pnl': float(pnl),
-        'pnl_pct': float(pnl_pct),
-        'total_trades': len(closed_positions),
-        'win_rate': float(win_rate) if closed_positions and 'win_rate' in locals() else 0,
-        'profit_factor': float(profit_factor) if closed_positions and 'profit_factor' in locals() else 0,
+        "instrument": instrument_symbol,
+        "scenario": scenario_name,
+        "timestamp": timestamp,
+        "date_range": "2024-01-01 to 2024-12-31",
+        "bars_processed": len(bars),
+        "duration_seconds": duration,
+        "total_equity": float(total_equity),
+        "net_pnl": float(pnl),
+        "pnl_pct": float(pnl_pct),
+        "total_trades": len(closed_positions),
+        "win_rate": float(win_rate),
+        "profit_factor": float(profit_factor),
     }
-    
+
     summary_path = results_dir / f"summary_{result_prefix}.json"
-    with open(summary_path, 'w') as f:
-        json.dump(summary, f, indent=2)
+    with open(summary_path, "w") as file:
+        json.dump(summary, file, indent=2)
     print(f"💾 Summary saved to: {summary_path}\n")
-    
+
+    persistence_enabled = os.getenv("NAUTILUS_PERSIST_BACKTESTS", "0").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if persistence_enabled:
+        try:
+            client = PostgresPersistenceClient()
+            model_files = {
+                "market_regime_hmm": (
+                    project_root / "ajk_strategies" / "models" / "market_regime_hmm.pkl"
+                ),
+                "price_forecast_lstm": (
+                    project_root / "ajk_strategies" / "models" / "price_forecast_lstm.h5"
+                ),
+                "price_forecast_lstm_meta": (
+                    project_root
+                    / "ajk_strategies"
+                    / "models"
+                    / "price_forecast_lstm_meta.pkl"
+                ),
+                "signal_aggregator_xgb": (
+                    project_root / "ajk_strategies" / "models" / "signal_aggregator_xgb.pkl"
+                ),
+            }
+            model_versions: dict[str, dict[str, str]] = {}
+            for name, path in model_files.items():
+                if path.exists():
+                    modified_at = datetime.fromtimestamp(
+                        path.stat().st_mtime,
+                        tz=timezone.utc,
+                    ).isoformat()
+                    model_versions[name] = {
+                        "path": str(path),
+                        "modified_at": modified_at,
+                    }
+
+            backtest_params = {
+                "fast_ema_period": fast_ema,
+                "slow_ema_period": slow_ema,
+                "enable_ml": enable_ml,
+                "use_sentiment": use_sentiment,
+                "max_bars": max_bars,
+            }
+
+            backtest_record = BacktestRunRecord(
+                strategy_id="ai_adaptive_strategy",
+                run_name=result_prefix,
+                instrument_id=str(instrument.id),
+                bar_type=bar_type_str,
+                model_versions=model_versions or None,
+                parameters=backtest_params,
+                dataset_source=str(parquet_file),
+                dataset_start=start_date.to_pydatetime(),
+                dataset_end=end_date.to_pydatetime(),
+                status="completed",
+                metrics=summary,
+                started_at=start_time,
+                completed_at=end_time,
+            )
+            backtest_id = client.record_backtest_run(backtest_record)
+
+            metric_records = []
+            for metric_name, metric_value in summary.items():
+                if isinstance(metric_value, (int, float)):
+                    metric_records.append(
+                        BacktestMetricRecord(
+                            backtest_run_id=backtest_id,
+                            metric_name=metric_name,
+                            metric_value=float(metric_value),
+                        )
+                    )
+            if metric_records:
+                client.record_backtest_metrics(metric_records)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to persist backtest run: %s", exc, exc_info=True)
+
     return {
-        'instrument': instrument_symbol,
-        'scenario': scenario_name,
-        'bars_processed': len(bars),
-        'duration_seconds': duration if 'duration' in locals() else 0,
-        'total_equity': total_equity,
-        'net_pnl': pnl,
-        'pnl_pct': pnl_pct,
-        'total_trades': len(closed_positions),
-        'win_rate': win_rate if closed_positions and 'win_rate' in locals() else 0,
-        'profit_factor': profit_factor if closed_positions and 'profit_factor' in locals() else 0,
+        "instrument": instrument_symbol,
+        "scenario": scenario_name,
+        "bars_processed": len(bars),
+        "duration_seconds": duration,
+        "total_equity": total_equity,
+        "net_pnl": pnl,
+        "pnl_pct": pnl_pct,
+        "total_trades": len(closed_positions),
+        "win_rate": win_rate,
+        "profit_factor": profit_factor,
     }
 
 
@@ -473,7 +541,10 @@ def run_all_scenarios():
         print("📊 COMPREHENSIVE BACKTEST SUMMARY")
         print(f"{'='*80}\n")
         
-        print(f"{'Instrument':<12} {'Scenario':<18} {'Bars':<10} {'Time':<8} {'P&L %':<10} {'Trades':<8} {'Win%':<8} {'PF':<6}")
+        print(
+            f"{'Instrument':<12} {'Scenario':<18} {'Bars':<10} {'Time':<8} "
+            f"{'P&L %':<10} {'Trades':<8} {'Win%':<8} {'PF':<6}"
+        )
         print("-" * 80)
         
         for r in all_results:

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Tuple
 
@@ -24,6 +26,7 @@ except ImportError as exc:  # pragma: no cover
     raise SystemExit("Install tensorflow to run this training script.") from exc
 
 from ajk_strategies.training.features import load_price_frame, resolve_input_files
+from ajk_strategies.training import persist_training_run
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,6 +67,7 @@ def build_sequences(returns: np.ndarray, sequence_length: int) -> Tuple[np.ndarr
 
 def main() -> None:
     args = parse_args()
+    started_at = datetime.now(timezone.utc)
     set_random_seeds(args.random_state)
 
     files = resolve_input_files(args.input_path.expanduser().resolve(), args.pattern, args.max_files)
@@ -133,6 +137,50 @@ def main() -> None:
 
     print(f"Saved LSTM model to {output_model}")
     print(f"Saved LSTM metadata to {output_meta}")
+
+    dataset_start = price_frame.index.min().to_pydatetime() if not price_frame.empty else None
+    dataset_end = price_frame.index.max().to_pydatetime() if not price_frame.empty else None
+    feature_hash = hashlib.sha256(
+        np.ascontiguousarray(returns.to_numpy(dtype=float)).tobytes()
+    ).hexdigest()
+
+    hyperparameters = {
+        "sequence_length": args.sequence_length,
+        "epochs": args.epochs,
+        "batch_size": args.batch_size,
+        "learning_rate": args.learning_rate,
+        "train_split": args.train_split,
+        "max_rows": args.max_rows,
+        "random_state": args.random_state,
+    }
+    metrics = {
+        "validation_mse": float(val_loss),
+        "train_samples": int(len(X_train)),
+        "validation_samples": int(len(X_val)),
+    }
+
+    completed_at = datetime.now(timezone.utc)
+    model_version = started_at.strftime("%Y%m%d%H%M%S")
+
+    run_id = persist_training_run(
+        strategy_id="ai_adaptive_strategy",
+        model_name="price_forecast_lstm",
+        model_version=model_version,
+        dataset_source=str(args.input_path),
+        dataset_files=files,
+        dataset_start=dataset_start,
+        dataset_end=dataset_end,
+        hyperparameters=hyperparameters,
+        metrics=metrics,
+        feature_hash=feature_hash,
+        completed_at=completed_at,
+        artifacts=[
+            ("lstm_model", output_model),
+            ("lstm_metadata", output_meta),
+        ],
+    )
+    if run_id:
+        print(f"Persisted LSTM training run with id {run_id}")
 
 
 if __name__ == "__main__":

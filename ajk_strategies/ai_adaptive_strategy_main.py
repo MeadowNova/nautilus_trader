@@ -6,9 +6,10 @@ This file contains the main strategy implementation that orchestrates
 all the advanced components.
 """
 
+import os
 from collections import deque
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Any, Mapping
 import numpy as np
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from nautilus_trader.indicators import ExponentialMovingAverage
 from nautilus_trader.indicators import AverageTrueRange
 from nautilus_trader.indicators import RelativeStrengthIndex
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.instruments import Instrument
 
 from ajk_strategies.market_regime import MarketRegime as HMMMarketRegime
 from ajk_strategies.training.features import (
@@ -33,6 +35,7 @@ from ajk_strategies.training.features import (
     DEFAULT_IIR_B_COEFFS,
     IIRFilter,
 )
+from ajk_strategies.cache import StrategyCache
 
 from ai_adaptive_strategy import (
     AIAdaptiveStrategyConfig,
@@ -83,6 +86,18 @@ class AIAdaptiveStrategy(Strategy):
         self.regime_detector = MarketRegimeDetector(lookback=config.regime_lookback)
         self.sentiment_analyzer = EnhancedSentimentAnalyzer()
         self.risk_manager = AdvancedRiskManager(config)
+        # Redis cache integration
+        self._redis_enabled = (
+            config.enable_redis_cache
+            or os.getenv("NAUTILUS_ENABLE_REDIS_CACHE", "0").lower() in {"1", "true", "yes"}
+        )
+        self.redis_cache: Optional[StrategyCache] = None
+        self.redis_strategy_key = config.redis_namespace or str(self.instrument_id)
+        self.redis_model_version = config.redis_model_version
+        self.redis_state_interval = max(1, config.redis_state_interval)
+        self.redis_state_ttl = max(config.redis_state_ttl, self.redis_state_interval)
+        self._redis_state_counter = 0
+        self._cached_metadata_published = False
         
         # Trading State
         self.position_entry_price: Optional[float] = None
@@ -150,7 +165,9 @@ class AIAdaptiveStrategy(Strategy):
         bar_type = BarType.from_str(self.config.bar_type) if isinstance(self.config.bar_type, str) else self.config.bar_type
         self.subscribe_bars(bar_type)
 
+        self._initialize_redis_cache()
         self._load_models()
+        self._publish_model_metadata()
         
         self.log.info(
             f"🚀 AI-Adaptive Strategy Started\n"
@@ -160,6 +177,7 @@ class AIAdaptiveStrategy(Strategy):
             f"   Sentiment: {self.config.use_sentiment}\n"
             f"   Risk Management: Multi-layer with circuit breakers"
         )
+        self._cache_strategy_state(bar=None, force=True)
     
     def on_bar(self, bar: Bar):
         """Process new bar data"""
@@ -200,9 +218,176 @@ class AIAdaptiveStrategy(Strategy):
         
         # Update risk metrics
         self._update_risk_metrics(bar)
+        self._cache_strategy_state(bar)
+    
+    def _initialize_redis_cache(self) -> None:
+        """Initialize Redis cache connection and restore cached state."""
+        if not self._redis_enabled:
+            return
+        try:
+            cache = StrategyCache()
+            if not cache.ping():
+                self.log.warning("Redis cache unreachable; disabling cache integration.")
+                self._redis_enabled = False
+                return
+            self.redis_cache = cache
+            cached_state = cache.load_strategy_state(self.redis_strategy_key)
+            if cached_state:
+                self._restore_cached_state(cached_state)
+                self.log.info("Restored strategy state from Redis cache.")
+        except Exception as exc:  # pragma: no cover - defensive
+            self.log.warning("Failed to initialize Redis cache: %s", exc)
+            self.redis_cache = None
+            self._redis_enabled = False
+
+    def _restore_cached_state(self, state: Mapping[str, Any]) -> None:
+        """Restore persisted strategy counters from Redis."""
+        try:
+            self.trades_won = int(state.get("trades_won", self.trades_won))
+            self.trades_lost = int(state.get("trades_lost", self.trades_lost))
+            self.total_profit = float(state.get("total_profit", self.total_profit))
+            self.bar_count = int(state.get("bar_count", self.bar_count))
+            self.last_optimization_bar = int(
+                state.get("last_optimization_bar", self.last_optimization_bar)
+            )
+            self.last_regime_update_bar = int(
+                state.get("last_regime_update_bar", self.last_regime_update_bar)
+            )
+            self.current_fast_period = int(
+                state.get("current_fast_period", self.current_fast_period)
+            )
+            self.current_slow_period = int(
+                state.get("current_slow_period", self.current_slow_period)
+            )
+        except (TypeError, ValueError):
+            self.log.warning("Redis cached state contained unexpected types; ignoring.")
+
+    def _cache_strategy_state(self, bar: Optional[Bar], *, force: bool = False) -> None:
+        """Persist a snapshot of the strategy state to Redis."""
+        if not self.redis_cache:
+            return
+        self._redis_state_counter += 1
+        if not force and (self._redis_state_counter % self.redis_state_interval) != 0:
+            return
+
+        state: dict[str, Any] = {
+            "instrument_id": str(self.instrument_id),
+            "trades_won": self.trades_won,
+            "trades_lost": self.trades_lost,
+            "total_profit": self.total_profit,
+            "bar_count": self.bar_count,
+            "last_optimization_bar": self.last_optimization_bar,
+            "last_regime_update_bar": self.last_regime_update_bar,
+            "current_fast_period": self.current_fast_period,
+            "current_slow_period": self.current_slow_period,
+            "latest_regime_numeric": self.latest_regime_numeric,
+            "latest_volatility": self.latest_volatility,
+            "latest_dsp_trend": self.latest_dsp_trend,
+            "latest_lstm_forecast": self.latest_lstm_forecast,
+        }
+
+        if self.latest_xgb_probs is not None:
+            state["latest_xgb_probs"] = self.latest_xgb_probs.tolist()
+
+        if bar is not None:
+            state["last_bar"] = {
+                "ts_event": str(bar.ts_event),
+                "close": bar.close.as_double(),
+                "high": bar.high.as_double(),
+                "low": bar.low.as_double(),
+                "volume": bar.volume.as_double() if hasattr(bar, "volume") else None,
+            }
+
+        try:
+            position_state: dict[str, Any] = {"status": "FLAT"}
+            if not self.portfolio.is_flat(self.instrument_id):
+                position = self.portfolio.position(self.instrument_id)
+                if position is not None:
+                    net_position = getattr(position, "net_position", None)
+                    side = getattr(net_position, "side", None)
+                    position_state = {
+                        "status": "OPEN",
+                        "side": getattr(side, "name", None),
+                        "quantity": float(position.quantity.as_double())
+                        if getattr(position, "quantity", None)
+                        else None,
+                        "avg_price": float(position.avg_price.as_double())
+                        if getattr(position, "avg_price", None)
+                        else None,
+                    }
+            state["position"] = position_state
+        except Exception:
+            state["position"] = {"status": "UNKNOWN"}
+
+        try:
+            self.redis_cache.save_strategy_state(
+                self.redis_strategy_key,
+                state,
+                ttl_seconds=self.redis_state_ttl,
+            )
+        except Exception as exc:  # pragma: no cover
+            self.log.debug("Unable to store strategy state in Redis: %s", exc)
+
+    def _publish_model_metadata(self) -> None:
+        """Publish model metadata to Redis for monitoring."""
+        if not self.redis_cache:
+            return
+        metadata: dict[str, Any] = {
+            "model_version": self.redis_model_version,
+        }
+
+        artefacts = {
+            "hmm": self.config.hmm_model_path,
+            "lstm_model": self.config.lstm_model_path,
+            "lstm_meta": self.config.lstm_meta_path,
+            "xgb": self.config.xgb_model_path,
+        }
+
+        for name, path_str in artefacts.items():
+            path = Path(path_str).expanduser()
+            if not path.is_absolute():
+                path = Path.cwd() / path
+            if path.exists():
+                stat = path.stat()
+                metadata[name] = {
+                    "path": str(path),
+                    "size_bytes": stat.st_size,
+                    "modified_at": stat.st_mtime,
+                }
+
+        if not metadata and not self._cached_metadata_published:
+            return
+
+        try:
+            self.redis_cache.save_model_metadata(
+                self.redis_strategy_key,
+                metadata,
+                version=self.redis_model_version,
+            )
+            self._cached_metadata_published = True
+        except Exception as exc:  # pragma: no cover
+            self.log.debug("Unable to store model metadata in Redis: %s", exc)
+
+    def on_stop(self) -> None:
+        """Finalize strategy execution."""
+        self._cache_strategy_state(bar=None, force=True)
+        try:
+            super().on_stop()
+        except AttributeError:
+            # Base implementation may not define on_stop.
+            pass
     
     def _load_models(self) -> None:
         """Load external ML artefacts for regime detection and signal scoring."""
+        if self.redis_cache and not self._cached_metadata_published:
+            cached_meta = self.redis_cache.load_model_metadata(
+                self.redis_strategy_key,
+                version=self.redis_model_version,
+            )
+            if cached_meta:
+                version = cached_meta.get("model_version", "unknown")
+                self.log.info("Redis metadata indicates model version %s.", version)
+
         # HMM Regime Model
         try:
             hmm_path = Path(self.config.hmm_model_path).expanduser()

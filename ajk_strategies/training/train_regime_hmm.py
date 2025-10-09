@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import sys
+import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
 
@@ -28,6 +30,7 @@ from ajk_strategies.training.features import (
     load_price_frame,
     resolve_input_files,
 )
+from ajk_strategies.training import persist_training_run
 
 
 def parse_args() -> argparse.Namespace:
@@ -81,6 +84,7 @@ def assign_state_mapping(model: GaussianHMM, scaler: StandardScaler) -> Dict[int
 
 def main() -> None:
     args = parse_args()
+    started_at = datetime.now(timezone.utc)
 
     files = resolve_input_files(args.input_path.expanduser().resolve(), args.pattern, args.max_files)
     price_frame = load_price_frame(files, instrument=args.instrument)
@@ -124,6 +128,43 @@ def main() -> None:
 
     print(f"Saved HMM model to {output_path}")
     print(summary)
+
+    dataset_start = feature_frame.index.min().to_pydatetime() if not feature_frame.empty else None
+    dataset_end = feature_frame.index.max().to_pydatetime() if not feature_frame.empty else None
+    feature_hash = hashlib.sha256(
+        np.ascontiguousarray(feature_frame.to_numpy(dtype=float)).tobytes()
+    ).hexdigest()
+
+    hyperparameters = {
+        "volatility_window": args.volatility_window,
+        "n_components": args.n_components,
+        "max_rows": args.max_rows,
+        "random_state": args.random_state,
+    }
+    metrics = {
+        "rows_used": summary["rows_used"],
+        "state_counts": summary["state_counts"],
+    }
+
+    completed_at = datetime.now(timezone.utc)
+    model_version = started_at.strftime("%Y%m%d%H%M%S")
+
+    run_id = persist_training_run(
+        strategy_id="ai_adaptive_strategy",
+        model_name="market_regime_hmm",
+        model_version=model_version,
+        dataset_source=str(args.input_path),
+        dataset_files=files,
+        dataset_start=dataset_start,
+        dataset_end=dataset_end,
+        hyperparameters=hyperparameters,
+        metrics=metrics,
+        feature_hash=feature_hash,
+        completed_at=completed_at,
+        artifacts=[("hmm_model", output_path)],
+    )
+    if run_id:
+        print(f"Persisted HMM training run with id {run_id}")
 
 
 if __name__ == "__main__":

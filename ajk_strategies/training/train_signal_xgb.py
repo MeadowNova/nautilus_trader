@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 if __package__ is None:  # pragma: no cover
@@ -33,6 +35,7 @@ from ajk_strategies.training.features import (
     load_price_frame,
     resolve_input_files,
 )
+from ajk_strategies.training import persist_training_run
 
 
 def parse_args() -> argparse.Namespace:
@@ -133,6 +136,7 @@ def compute_targets(close: pd.Series, horizon: int, threshold: float) -> pd.Seri
 
 def main() -> None:
     args = parse_args()
+    started_at = datetime.now(timezone.utc)
 
     files = resolve_input_files(args.input_path.expanduser().resolve(), args.pattern, args.max_files)
     price_frame = load_price_frame(files, instrument=args.instrument)
@@ -205,6 +209,47 @@ def main() -> None:
     joblib.dump(artifact, output_path)
 
     print(f"Saved XGBoost model to {output_path}")
+
+    dataset_start = dataset.index.min().to_pydatetime() if not dataset.empty else None
+    dataset_end = dataset.index.max().to_pydatetime() if not dataset.empty else None
+    feature_hash = hashlib.sha256(
+        np.ascontiguousarray(dataset[feature_columns].to_numpy(dtype=float)).tobytes()
+    ).hexdigest()
+
+    hyperparameters = {
+        "volatility_window": args.volatility_window,
+        "future_horizon": args.future_horizon,
+        "return_threshold": args.return_threshold,
+        "n_estimators": args.n_estimators,
+        "learning_rate": args.learning_rate,
+        "max_depth": args.max_depth,
+        "max_rows": args.max_rows,
+        "random_state": args.random_state,
+    }
+    metrics = {
+        "class_counts": class_counts.tolist(),
+        "samples": int(len(dataset)),
+    }
+
+    completed_at = datetime.now(timezone.utc)
+    model_version = started_at.strftime("%Y%m%d%H%M%S")
+
+    run_id = persist_training_run(
+        strategy_id="ai_adaptive_strategy",
+        model_name="signal_aggregator_xgb",
+        model_version=model_version,
+        dataset_source=str(args.input_path),
+        dataset_files=files,
+        dataset_start=dataset_start,
+        dataset_end=dataset_end,
+        hyperparameters=hyperparameters,
+        metrics=metrics,
+        feature_hash=feature_hash,
+        completed_at=completed_at,
+        artifacts=[("signal_aggregator", output_path)],
+    )
+    if run_id:
+        print(f"Persisted XGBoost training run with id {run_id}")
 
 
 if __name__ == "__main__":

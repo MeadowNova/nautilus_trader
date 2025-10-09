@@ -1,6 +1,6 @@
 # Infrastructure Status Report
 
-**Date:** January 2025  
+**Date:** October 7, 2025  
 **Status:** ✅ **READY FOR USE**
 
 ---
@@ -107,6 +107,29 @@ less OPERATIONS_GUIDE.md  # Complete guide
 ```
 
 ---
+
+### 6. Model Artefacts & Monitoring (Updated 2025-10-07)
+- ✅ **Production ML Bundle Deployed** in `ajk_strategies/models/`
+  - `market_regime_hmm.pkl` — 2,262,971 rows, state counts `[57,896, 1,011,601, 1, 1,193,472, 1]`
+  - `price_forecast_lstm.h5` — Validation MSE ≈ 0.83754 (epoch 5)
+  - `price_forecast_lstm_meta.pkl` — Scalers + sequence length metadata
+  - `signal_aggregator_xgb.pkl` — Class distribution `[629,103, 819,741, 814,091]`
+- ✅ **Integration Status**
+  - `ai_adaptive_strategy_main.py` now loads HMM/LSTM/XGB at start and streams DSP/volatility features
+  - Backtest smoke test (`python ajk_strategies/run_backtest_with_real_data.py --max-bars 5000`) completed with live HMM logs
+- ✅ **Integrity Verification** (captured via `sha256sum ajk_strategies/models/*` on 2025-10-07)
+  - `30cc229f62a8c03f0bbd4d4176f84fc51e5d55a5050708fcc48c1f15544a9afc`  market_regime_hmm.pkl
+  - `7ebe9a9d729afc337b483bae360055801e85824e7ecf5a605f8168fdea18a460`  price_forecast_lstm.h5
+  - `0cc837add39da846d9d108d85af4ff9b93e3db3c7d6bc824ddd5835ff85cda50`  price_forecast_lstm_meta.pkl
+  - `5789e06b0b5d77432f58dac9c42b0a5b8fa44e2d3e198216968fc3b5d02e77d2`  signal_aggregator_xgb.pkl
+- ✅ **Monitoring Hook Points**
+  - Prometheus exporter to emit `model_artifact_info` gauge (hash + timestamp) — pending automation
+  - Grafana dashboard Phase 5 will surface model freshness + validation metrics
+- ✅ **Persistence & Caching Toggles**
+  - `NAUTILUS_PERSIST_MODELS=1` → training scripts register runs + artefacts in Postgres (`ai_extensions.model_training_runs` et al.)
+  - `NAUTILUS_PERSIST_BACKTESTS=1` → real-data backtests log outcomes to Postgres (`ai_extensions.backtest_runs`)
+  - `NAUTILUS_ENABLE_REDIS_CACHE=1` or `AIAdaptiveStrategyConfig.enable_redis_cache=True` → strategy publishes state snapshots & model metadata to Redis (`ajk_strategies/cache/redis_manager.py`)
+  - Redis endpoints pull from `.env.local` (`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`); default compose ports 6378→6379 already provisioned
 
 ## 📊 Service URLs
 

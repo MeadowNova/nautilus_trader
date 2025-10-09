@@ -1,7 +1,7 @@
 # AI-Adaptive Strategy Infrastructure Implementation Plan
 
 **Created:** October 6, 2025  
-**Status:** Planning → Implementation  
+**Status:** In Progress — Persistence verified; monitoring & paper-trading enablement pending  
 **Working Directory:** `/home/ajk/Nautilus/nautilus_trader/ai-working/database_Infra layer`  
 **Parent Plan:** `/home/ajk/Nautilus/nautilus_trader/infrastructure/INFRASTRUCTURE_PLAN.md`
 
@@ -23,97 +23,58 @@ This plan adapts the comprehensive Nautilus infrastructure stack specifically fo
 ## Current State Analysis
 
 ### ✅ What We Have
-- **Backtest Runner**: `run_backtest_with_real_data.py` (512 lines) - fully operational
-- **Data**: 4.3 years BTC/ETH (2.26M bars each) in Parquet format
-- **Results Export**: CSV files to `backtest_results/` directory
-- **Strategy**: AI-Adaptive with ML optimization, regime detection, risk management
+- **Backtest + Strategy Integration**: `run_backtest_with_real_data.py` loads the refreshed HMM/LSTM/XGB artefacts and exercises the full pipeline on historical BTC/ETH data.
+- **PostgreSQL Stack Online**: Docker compose brings up `nautilus_postgres` on host port **5435**. The `ai_extensions` schema now stores `model_training_runs`, `model_artifacts`, `backtest_runs`, `backtest_metrics`, and the existing AI logs.
+- **Training Persistence**: All trainers persist run metadata, artefacts, and metrics whenever `NAUTILUS_PERSIST_MODELS=1`. Latest verification (2025-10-08) confirmed inserts into `ai_extensions.model_training_runs` after a short HMM session.
+- **Redis Cache Layer**: `ajk_strategies/cache/redis_manager.py` is live; `AIAdaptiveStrategy` publishes state and model metadata when `enable_redis_cache` or `NAUTILUS_ENABLE_REDIS_CACHE=1`. Manual `StrategyCache.save_strategy_state` + `redis-cli` checks succeeded against container port **6378**.
 
-### ❌ What's Missing
-- **Database Storage**: Results only in CSV, not queryable/searchable
-- **Caching Layer**: No Redis for strategy state persistence
-- **Monitoring**: No real-time dashboards or metrics
-- **Infrastructure**: No Docker stack deployed
+### ⚙️ What's Still Pending
+- **Backtest Persistence Confirmation**: Manual inserts validated via `PostgresPersistenceClient`, but we still need an uninterrupted BTC/ETH backtest run with `NAUTILUS_PERSIST_BACKTESTS=1` to populate `ai_extensions.backtest_runs`/`backtest_metrics` end-to-end.
+- **Monitoring & Dashboards**: Prometheus/Grafana services are defined but not bootstrapped. Exporters for Postgres (`model_artifact_info`, training run health) and Redis (cache hit/miss) remain todo along with initial Grafana dashboards.
+- **Paper-Trading Enablement**: CCXT adapter wiring, exchange credential scaffolding, and TradingNode dry-runs on Bybit/OKX testnets are outstanding before we can claim paper trading readiness.
+- **Operational Automation**: Need cron/CI hooks for migrations, regular artefact retention, alerting, and runbook updates once monitoring comes online.
 
-### 🎯 Goal
-Transform from **file-based results** to **production database infrastructure** with monitoring.
+### 🎯 Current Goal
+With persistence and caching verified, focus next on monitoring/alerting bring-up and the CCXT-led paper-trading workflow so we can exercise the infrastructure under production-like conditions.
+
+---
+
+### 2025-10-08 Verification Snapshot
+- `docker compose --env-file infrastructure/.env.local up -d postgres redis` remains the canonical bring-up; containers report healthy on **5435/6378**.
+- Short HMM trainer run (with `NAUTILUS_PERSIST_MODELS=1`) inserted rows into `ai_extensions.model_training_runs`, `model_artifacts`, and `model_training_metrics`.
+- Manual calls through `PostgresPersistenceClient` and `StrategyCache.save_strategy_state` confirmed read/write paths; Redis values retrieved via `redis-cli` round-trip.
+- These checks cover persistence primitives; remaining work targets observability, automated validation, and CCXT-driven paper execution.
 
 ---
 
-## Phase 1: PostgreSQL Integration (Week 1)
+## Dashboard & Monitoring Workstream (Consolidated)
 
-### Objective
-Store backtest results in PostgreSQL instead of CSV files, enabling:
-- Historical result queries
-- Strategy comparison analysis
-- Performance trend tracking
-- Advanced analytics
+> Derived from historical `ai-working/dashboard enhancing*/plan.md` + `implementation.md` drafts. The canonical home for these tasks is now this document; treat both `ai-working/dashboard enhancing` and its trailing-space duplicate as archived references only.
 
-### Implementation Plan
+### Core Deliverables
+- **Schema uplift:** Backtest + trade detail tables, ML snapshots, and circuit-breaker logs (`infrastructure/postgres/03-backtest-schema.sql`, `04-dashboard-views.sql`). Includes views for Grafana (`v_backtest_performance`, `v_strategy_comparison`, etc.) and supporting indexes.
+- **Python storage helpers:** Connection pooling + query helpers under `ajk_strategies/database/` (pool manager, typed query modules) replacing direct psycopg2 usage in runners.
+- **Prometheus exporter:** `ajk_strategies/monitoring/` package to define metrics (`model_artifact_info`, backtest throughput, TradingNode health), scrape Postgres + Redis gauges, and expose `/metrics`.
+- **Redis cache extensions:** Additional helpers for regime snapshots, ML model metadata, and circuit-breaker state to support dashboard instrumentation.
+- **Grafana dashboards:** Eight JSON dashboards (Executive overview, Strategy performance, ML optimisation, Regime analysis, Pattern detection, Risk, Sentiment, Trade analysis) provisioned via `infrastructure/monitoring/grafana/`.
+- **Alerting:** Prometheus alert rules (stale models, failed inserts, cache saturation, paper-trading heartbeat) with escalation guidance.
+- **Testing + docs:** Integration tests for the monitoring pipeline, Ops runbook, developer guide, dashboard usage guide.
 
-#### Step 1.1: Deploy PostgreSQL Container
-```bash
-cd /home/ajk/Nautilus/nautilus_trader
-source activate_env.sh
-
-# Pull & start full stack (sequential pulls avoid Docker compose bug)
-docker compose --env-file infrastructure/.env.local \
-  -f infrastructure/docker/docker-compose.yml pull
-
-docker compose --env-file infrastructure/.env.local \
-  -f infrastructure/docker/docker-compose.yml up -d
-
-docker compose --env-file infrastructure/.env.local \
-  -f infrastructure/docker/docker-compose.yml ps
-
-# Ports (host → container)
-# - PostgreSQL: 5433 → 5432
-# - Redis:     6378 → 6379
-# - Prometheus: 9090
-# - Grafana:    3000
-# - Exporters: 9187 (Postgres) / 9121 (Redis)
-```
-
-```bash
-docker compose --env-file infrastructure/.env.local \
-  -f infrastructure/docker/docker-compose.yml logs postgres
-```
-
-> Grafana note: the Postgres datasource ships with Grafana 12, so only `GF_PLUGINS_PREINSTALL=redis-datasource` is set. Legacy `GF_INSTALL_PLUGINS` is removed to avoid 404 errors.
-
-#### Step 1.2: Create Database Schema
-The parent plan already has comprehensive schema at `infrastructure/postgres/schema.sql`. We'll extend it for AI-Adaptive specific needs:
-
-**File:** `infrastructure/postgres/ai_adaptive_schema.sql`
-```sql
--- ============================================
--- AI-ADAPTIVE STRATEGY EXTENSIONS
--- ============================================
-
--- ML Model Performance Tracking
-CREATE TABLE ml_optimization_log (
-    id BIGSERIAL PRIMARY KEY,
-    backtest_id INTEGER REFERENCES backtests(id) ON DELETE CASCADE,
-    timestamp BIGINT NOT NULL,
-    
-    -- Current parameters
-    fast_ema_period INTEGER,
-    slow_ema_period INTEGER,
-    
-    -- Optimization metrics
-    gradient_descent_loss DECIMAL(10,6),
-    logistic_regression_score DECIMAL(10,6),
-    newton_raphson_iterations INTEGER,
-    
-    -- Performance snapshot
-    current_win_rate DECIMAL(5,2),
-    current_sharpe DECIMAL(10,4),
-    bars_since_last_optimization INTEGER,
-    
-    created_at TIMESTAMP DEFAULT NOW()
-);
-```
+### Consolidated Gaps
+- Backtest dashboard SQL applied (2025-10-08 via `03-backtest-schema.sql` / `04-dashboard-views.sql`) — capture validation queries and add to runbook.
+- Monitoring package scaffolded (`ajk_strategies/monitoring/*`) — integrate with Prometheus scrape config + Grafana dashboards and document refresh cadence.
+- Docker monitoring stack exists (`prometheus`, `grafana` services) but lacks configuration, exporters, or dashboards.
+- Documentation from prior plan lives only in drafts; we need fresh `IMPLEMENTATION.md`, `OPERATIONS.md`, etc., scoped to the now canonical folder.
 
 ---
+
+## Phase 1: PostgreSQL Integration *(Completed 2025-10-08)*
+
+- **Stack** – `docker compose --env-file infrastructure/.env.local up -d postgres redis`  
+  Host ports: **5435 → postgres**, **6378 → redis** (health-checked). Re-running `02-ai-extensions.sql` / `03-indexes.sql` is safe for future migrations.
+- **Schema** – `ai_extensions` now owns: `model_training_runs`, `model_artifacts`, `backtest_runs`, `backtest_metrics`, `performance_metrics`, `ml_optimization_log`, `regime_detection_log`, `pattern_detection_log`, `risk_events`, `sentiment_log`, each indexed for strategy + recency lookups.
+- **Application Hooks** – `ajk_strategies/persistence/postgres_storage.py` and `ajk_strategies/training/persistence.py` wrap psycopg2 access. Trainers/backtests opt into writes with `NAUTILUS_PERSIST_MODELS=1` / `NAUTILUS_PERSIST_BACKTESTS=1`.
+- **ENV Notes** – Scripts inherit `DB_HOST=localhost`, `DB_PORT=5435`, `DB_USER=nautilus`, `DB_PASSWORD=<secret>` from `infrastructure/.env.local`. Export them manually when running commands outside docker-compose.
 
 ## Phase 2: Model Training Artefacts (2025-10-07)
 - **Market Regime HMM:** `ajk_strategies/models/market_regime_hmm.pkl` trained on 2,262,971 rows; state counts `[57896, 1011601, 1, 1193472, 1]`.
@@ -554,93 +515,12 @@ def get_regime_analysis(backtest_id):
 
 ---
 
-## Phase 2: Redis Caching (Week 1-2)
+## Phase 2: Redis Caching *(Completed 2025-10-08)*
 
-### Objective
-Implement Redis caching for:
-- Strategy state persistence (positions, parameters)
-- ML model checkpoints
-- Real-time market data (when moving to live trading)
-- Rate limiting for exchange APIs
-
-### Implementation Plan
-
-#### Step 2.1: Deploy Redis Container
-```bash
-cd /home/ajk/Nautilus/nautilus_trader/infrastructure/docker
-
-# Start Redis
-docker-compose up -d redis
-
-# Test connection
-docker exec nautilus_redis redis-cli ping
-```
-
-#### Step 2.2: Create Redis Manager
-
-**File:** `ajk_strategies/cache/redis_manager.py`
-```python
-"""Redis cache manager for AI-Adaptive strategy."""
-
-import redis
-import json
-import pickle
-from typing import Any, Optional
-import os
-
-class StrategyCache:
-    """Redis cache for strategy state and models."""
-    
-    def __init__(self):
-        self.client = redis.Redis(
-            host=os.getenv('REDIS_HOST', 'localhost'),
-            port=int(os.getenv('REDIS_PORT', 6379)),
-            password=os.getenv('REDIS_PASSWORD', 'changeme'),
-            db=0,
-            decode_responses=False  # For pickle support
-        )
-    
-    # Strategy State Management
-    def save_strategy_state(self, strategy_id: str, state: dict, ttl: int = 3600):
-        """Save strategy state (positions, parameters, etc.)"""
-        key = f"strategy:{strategy_id}:state"
-        self.client.setex(key, ttl, json.dumps(state))
-    
-    def get_strategy_state(self, strategy_id: str) -> Optional[dict]:
-        """Get strategy state."""
-        key = f"strategy:{strategy_id}:state"
-        data = self.client.get(key)
-        return json.loads(data) if data else None
-    
-    # ML Model Checkpoints
-    def save_ml_model(self, strategy_id: str, model: Any, version: str = "latest"):
-        """Save ML model checkpoint (pickled)."""
-        key = f"ml_model:{strategy_id}:{version}"
-        self.client.set(key, pickle.dumps(model))
-    
-    def load_ml_model(self, strategy_id: str, version: str = "latest") -> Optional[Any]:
-        """Load ML model checkpoint."""
-        key = f"ml_model:{strategy_id}:{version}"
-        data = self.client.get(key)
-        return pickle.loads(data) if data else None
-    
-    # Regime Detection Cache
-    def cache_current_regime(self, instrument: str, regime: str, confidence: float, ttl: int = 300):
-        """Cache current market regime."""
-        key = f"regime:{instrument}:current"
-        data = {
-            'regime': regime,
-            'confidence': confidence,
-            'timestamp': int(time.time() * 1e9)
-        }
-        self.client.setex(key, ttl, json.dumps(data))
-    
-    def get_current_regime(self, instrument: str) -> Optional[dict]:
-        """Get cached regime."""
-        key = f"regime:{instrument}:current"
-        data = self.client.get(key)
-        return json.loads(data) if data else None
-```
+- **Runtime** – Redis runs via the same compose command (`up -d redis`) and listens on **6378** with password enforcement. `redis-cli -a $REDIS_PASSWORD ping` is the quickest health check.
+- **Code** – `ajk_strategies/cache/redis_manager.py` exposes `StrategyCache` (state snapshots, model metadata, rate limiting, market snapshots) driven by `RedisCacheConfig` values from `.env.local`.
+- **Strategy** – `AIAdaptiveStrategy` opt-in switches: set `AIAdaptiveStrategyConfig.enable_redis_cache=True` or export `NAUTILUS_ENABLE_REDIS_CACHE=1`. On start it restores counters, republishes metadata, and begins periodic state snapshots (`redis_state_interval`, default 20 bars).
+- **Validation** – Manual smoke tests wrote to `strategy:test_strategy:state`; keys were visible via `docker exec nautilus_redis redis-cli -a ... keys strategy:*`.
 
 ---
 
@@ -880,18 +760,18 @@ docker exec nautilus_postgres psql -U nautilus -d nautilus_trader -c "\dt"
 ## Success Metrics
 
 ### Week 1 Completion
-- [ ] PostgreSQL container running
-- [ ] Schema created and tested
-- [ ] Backtest results saving to database
-- [ ] Redis container running
-- [ ] Basic caching implemented
+- [x] PostgreSQL container running (host port 5435 via docker compose)
+- [x] Schema created and tested (`ai_extensions.*` tables + indexes)
+- [ ] Backtest results saving to database *(manual inserts verified; awaiting full backtest run due to runtime limits)*
+- [x] Redis container running (host port 6378)
+- [x] Basic caching implemented (`StrategyCache` opt-in with `NAUTILUS_ENABLE_REDIS_CACHE`)
 
 ### Week 2 Completion
-- [ ] Grafana dashboards created
-- [ ] Prometheus metrics exporting
-- [ ] Full stack deployed and tested
-- [ ] All services healthy
-- [ ] Documentation complete
+- [ ] Grafana dashboards created (pending Prometheus datasource + panels)
+- [ ] Prometheus metrics exporting (`model_artifact_info`, Redis/state gauges)
+- [ ] Full stack end-to-end test (requires successful backtest persistence run)
+- [x] All services healthy (Postgres/Redis containers monitored)
+- [ ] Documentation complete (update monitoring + paper-trading guides)
 
 ### Performance Targets
 - **Database writes**: < 100ms per backtest result
@@ -903,23 +783,17 @@ docker exec nautilus_postgres psql -U nautilus -d nautilus_trader -c "\dt"
 
 ## Next Steps
 
-### Immediate (This Session)
-1. Review this plan with user
-2. Create directory structure
-3. Copy docker-compose.yml from infrastructure/
-4. Set up .env.local with passwords
+### Immediate Focus
+1. **Monitoring bring-up**: `docker compose --env-file infrastructure/.env.local up -d prometheus grafana`; add Postgres exporter (training/backtest tables) + Redis exporter (cache hit/miss, TTL) and ship base Grafana dashboards for run health.
+2. **Backtest persistence validation**: schedule a constrained BTC/ETH backtest (smaller lookback) under `NAUTILUS_PERSIST_BACKTESTS=1` to populate `ai_extensions.backtest_runs` + `backtest_metrics`, and document verification queries.
+3. **Prometheus exporters & alerts**: expose `model_artifact_info`, `training_run_status`, and Redis saturation metrics; define alert thresholds (stale models, cache misses, failed inserts) for the forthcoming dashboards.
 
-### Tomorrow
-1. Deploy PostgreSQL + Redis
-2. Create database schema
-3. Test basic connectivity
-4. Update backtest runner
-
-### This Week
-1. Complete database integration
-2. Deploy monitoring stack
-3. Create first Grafana dashboard
-4. Run end-to-end test
+### Pre-Paper-Trading Checklist
+1. Populate exchange credentials in `.env.local` (Bybit/OKX testnets) and align adapter configs with `docs/api_reference/adapters` connection parameters; smoke-test CCXT connectivity via `ajk_strategies/ccxt_live_data.py`.
+2. Build a paper `TradingNode` profile mirroring backtest parameters, enabling `StrategyCache`, Postgres persistence, and risk limits (`MAX_DAILY_LOSS`, `MAX_DRAWDOWN`, circuit-breakers) per `docs/concepts/portfolio.md` and `docs/concepts/orders.md`.
+3. Execute TradingNode dry-runs against CCXT testnet feeds, validating order lifecycle, persistence inserts, Redis snapshots, and Prometheus metrics capture.
+4. Draft operational runbooks for start/stop procedures, credential rotation, failure recovery, and alert acknowledgment workflows aligned with `docs/concepts/live.md` guidance.
+5. Keep `test_ccxt_integration.py` / `test_ccxt_fallback.py` smoke tests in rotation to monitor reachable venues and update plan assumptions when regional blocking changes.
 
 ---
 
@@ -931,26 +805,23 @@ docker exec nautilus_postgres psql -U nautilus -d nautilus_trader -c "\dt"
 - **Nautilus Docs**: https://nautilustrader.io/docs/
 
 ### Docker Services
-- PostgreSQL: Port 5432
-- Redis: Port 6379
-- Prometheus: Port 9090
-- Grafana: Port 3000
-- Metrics Server: Port 8000
+- PostgreSQL: Host **5435** (container 5432)
+- Redis: Host **6378** (container 6379)
+- Prometheus: 9090 *(pending start-up)*
+- Grafana: 3000
+- Metrics Server: 8000 *(custom exporters to be added)*
 
-### Database Connections
+### Persistence Helpers
 ```python
-# PostgreSQL
-from database.backtest_storage import BacktestDatabaseStorage
-db = BacktestDatabaseStorage()
+from ajk_strategies.persistence import PostgresPersistenceClient, BacktestRunRecord
+from ajk_strategies.cache import StrategyCache
 
-# Redis
-from cache.redis_manager import StrategyCache
+client = PostgresPersistenceClient()
 cache = StrategyCache()
 ```
 
 ---
 
-**Status:** Ready for Implementation  
-**Estimated Time:** 2 weeks (6-8 hours per week)  
-**Priority:** High - Needed for production deployment
-
+**Status:** DB & Cache operational — Monitoring + paper-trading prep in progress  
+**Estimated Remaining Effort:** ~1 focused week (dashboards, TradingNode dry-run)  
+**Priority:** High — unlock paper-trading milestone

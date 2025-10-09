@@ -133,6 +133,13 @@ class AIAdaptiveStrategyConfig(StrategyConfig, frozen=True):
     xgb_model_path: str = "ajk_strategies/models/signal_aggregator_xgb.pkl"
     xgb_long_threshold: float = 0.55
 
+    # Redis cache integration
+    enable_redis_cache: bool = False
+    redis_namespace: str | None = None
+    redis_model_version: str = "latest"
+    redis_state_ttl: int = 3600
+    redis_state_interval: int = 20
+
 
 # ==================== ADVANCED ML OPTIMIZER ====================
 
