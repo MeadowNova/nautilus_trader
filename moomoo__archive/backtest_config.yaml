@@ -1,0 +1,318 @@
+# Backtesting Configuration for NautilusTrader Strategies
+# ========================================================
+# This file defines backtest parameters for all three strategies
+
+# Global Settings
+# ---------------
+backtest:
+  start_date: "2023-01-01"
+  end_date: "2025-11-30"
+  initial_capital: 100000  # $100k starting capital
+  currency: "USD"
+  venue: "NASDAQ"  # Primary venue
+
+# Data Configuration
+# ------------------
+data:
+  # Data source (Moomoo OpenD API in production)
+  source: "historical_csv"  # or "moomoo_api"
+  data_directory: "./data/historical"
+
+  # Data types needed
+  quote_ticks: true
+  trade_ticks: true
+  bars_1min: true
+  bars_1day: true
+  option_chains: true  # For Strategy 3
+
+  # Data quality filters
+  filter_outliers: true
+  outlier_threshold: 5.0  # Z-score for outlier detection
+  fill_missing: "forward"  # forward, interpolate, or drop
+
+# Transaction Costs
+# -----------------
+transaction_costs:
+  # Moomoo commission structure (zero commission)
+  commission:
+    equities: 0.0
+    options: 0.0
+
+  # Slippage models
+  slippage:
+    equities_bps: 5.0  # 0.05% for liquid stocks
+    etf_bps: 3.0       # 0.03% for ETFs
+    market_impact_bps: 5.0  # Additional for large orders
+
+  # Bid-ask spread costs
+  spread:
+    equities_bps: 5.0
+    etf_bps: 2.0
+    options_dollars: 0.05  # $0.05 per contract
+
+# Risk Management
+# ---------------
+risk_management:
+  # Portfolio-level limits
+  max_gross_exposure: 1.30  # 130% including shorts
+  max_net_exposure: 0.60    # 60% net long
+  max_sector_exposure: 0.35 # 35% in any sector
+  max_single_position: 0.10 # 10% per position
+
+  # Risk metrics
+  daily_var_95_limit: 0.05  # 5% daily VaR
+  max_drawdown_limit: 0.20  # 20% max drawdown
+
+  # Position sizing
+  default_sizing_method: "kelly"  # kelly, fixed_fractional, or fixed_percent
+  kelly_fraction: 0.5  # Use half-Kelly for safety
+  max_position_size: 0.10  # 10% max per position
+
+# Strategy 1: Pairs Trading
+# --------------------------
+strategies:
+  pairs_trading:
+    enabled: true
+    allocation: 0.30  # 30% of capital
+
+    # Pairs to trade
+    pairs:
+      - long: "XLE.ARCA"
+        short: "XOP.ARCA"
+        name: "Energy Large/Small Cap"
+
+      - long: "XLF.ARCA"
+        short: "KRE.ARCA"
+        name: "Financials Diversified/Regional"
+
+      - long: "XLK.ARCA"
+        short: "SMH.ARCA"
+        name: "Tech Broad/Semiconductors"
+
+    # Parameters
+    lookback_period: 60  # days
+    zscore_entry: 2.0
+    zscore_exit: 0.5
+    zscore_stop: 3.0
+    position_size_pct: 0.10  # 10% per leg
+    max_holding_days: 5
+    min_correlation: 0.85
+    cointegration_pvalue: 0.05
+
+    # Risk limits
+    max_concurrent_pairs: 3
+    max_position_loss: 0.02  # 2% per trade
+
+    # Optimization grid (for walk-forward analysis)
+    optimization:
+      lookback_period: [40, 60, 90, 120]
+      zscore_entry: [1.5, 2.0, 2.5]
+      position_size_pct: [0.05, 0.10, 0.15]
+
+# Strategy 2: Momentum Breakout
+# ------------------------------
+  momentum_breakout:
+    enabled: true
+    allocation: 0.40  # 40% of capital
+
+    # Universe of stocks
+    instruments:
+      # High beta tech stocks
+      - "NVDA.NASDAQ"
+      - "AMD.NASDAQ"
+      - "TSLA.NASDAQ"
+      - "PLTR.NYSE"
+      - "SNOW.NYSE"
+      - "CRWD.NASDAQ"
+      - "NET.NYSE"
+      - "DDOG.NASDAQ"
+
+      # Mega-cap liquid (fallback)
+      - "AAPL.NASDAQ"
+      - "MSFT.NASDAQ"
+      - "GOOGL.NASDAQ"
+      - "META.NASDAQ"
+      - "AMZN.NASDAQ"
+
+    # Benchmark for relative strength
+    benchmark: "SPY.ARCA"
+
+    # Parameters
+    breakout_lookback: 20  # days
+    volume_multiplier: 1.5
+    rsi_period: 14
+    rsi_min: 55.0
+    rsi_max: 75.0
+    relative_strength_min: 0.02  # 2% outperformance
+    atr_period: 14
+    profit_target_atr: 2.0
+    trailing_stop_atr: 1.5
+    position_size_pct: 0.08  # 8% per position
+    max_holding_days: 10
+    max_concurrent: 5
+
+    # Risk limits
+    sector_concentration: 0.25  # Max 25% in one sector
+
+    # Optimization grid
+    optimization:
+      breakout_lookback: [15, 20, 30]
+      profit_target_atr: [1.5, 2.0, 2.5]
+      trailing_stop_atr: [1.0, 1.5, 2.0]
+      position_size_pct: [0.05, 0.08, 0.12]
+
+# Strategy 3: Covered Calls
+# --------------------------
+  covered_calls:
+    enabled: true
+    allocation: 0.30  # 30% of capital
+
+    # High-dividend stocks
+    stocks:
+      - symbol: "JNJ"
+        name: "Johnson & Johnson"
+        sector: "Healthcare"
+
+      - symbol: "PG"
+        name: "Procter & Gamble"
+        sector: "Consumer Staples"
+
+      - symbol: "KO"
+        name: "Coca-Cola"
+        sector: "Consumer Staples"
+
+      - symbol: "VZ"
+        name: "Verizon"
+        sector: "Telecom"
+
+      - symbol: "ABBV"
+        name: "AbbVie"
+        sector: "Healthcare"
+
+    # Parameters
+    dte_min: 30  # Minimum days to expiration
+    dte_max: 45  # Maximum days to expiration
+    delta_target: 0.30  # Target delta for sold calls
+    delta_max: 0.35
+    min_premium_pct: 0.01  # 1% of stock price
+    profit_target_pct: 0.50  # 50% of max profit
+    roll_threshold_dte: 7
+    roll_delta_threshold: 0.95
+    min_iv_rank: 40.0
+    shares_per_position: 100
+    max_positions: 5
+
+    # Risk limits
+    max_stock_loss: 0.10  # 10% stop on stock
+
+    # Optimization grid
+    optimization:
+      delta_target: [0.25, 0.30, 0.35]
+      dte_range: [[21, 35], [30, 45], [35, 50]]
+      profit_target_pct: [0.40, 0.50, 0.60]
+
+# Performance Metrics
+# -------------------
+metrics:
+  # Target metrics
+  target_sharpe: 1.5
+  target_return_annual: 0.15  # 15%
+  target_max_drawdown: 0.15   # 15%
+  target_win_rate: 0.55       # 55%
+
+  # Calculation periods
+  rolling_sharpe_window: 60  # days
+  var_window: 252  # days
+
+  # Reporting frequency
+  daily_reports: true
+  weekly_summary: true
+  monthly_review: true
+
+# Walk-Forward Analysis
+# ---------------------
+walk_forward:
+  enabled: true
+  train_period_days: 252  # 1 year training
+  test_period_days: 63    # 3 months testing
+  step_days: 21           # 1 month step forward
+
+  # Optimization settings
+  optimization_metric: "sharpe_ratio"  # sharpe_ratio, profit_factor, sortino
+  min_trades_required: 30  # Minimum trades in train period
+
+  # Overfitting detection
+  train_test_sharpe_threshold: 0.5  # Max 50% degradation
+
+# Monte Carlo Analysis
+# ---------------------
+monte_carlo:
+  enabled: true
+  simulations: 1000
+  resample_method: "bootstrap"  # bootstrap or shuffle
+  confidence_levels: [0.05, 0.25, 0.50, 0.75, 0.95]
+
+# Reporting
+# ---------
+reporting:
+  # Output directory
+  output_dir: "./results"
+
+  # Report formats
+  generate_html: true
+  generate_pdf: false
+  generate_csv: true
+
+  # Charts to include
+  charts:
+    - equity_curve
+    - drawdown
+    - returns_distribution
+    - monthly_returns_heatmap
+    - rolling_sharpe
+    - trade_analysis
+    - position_exposure
+    - sector_allocation
+
+  # Trade logs
+  detailed_trade_log: true
+  include_rejected_signals: false
+
+# Live Trading Simulation (Paper Trading)
+# ----------------------------------------
+paper_trading:
+  enabled: false  # Enable after backtesting
+
+  # Account settings
+  account_id: "moomoo_paper"
+  initial_balance: 100000
+
+  # Execution settings
+  order_type: "MARKET"  # MARKET or LIMIT
+  limit_order_offset_bps: 5  # For limit orders
+  max_order_attempts: 3
+  order_timeout_seconds: 30
+
+  # Risk controls
+  daily_loss_limit: 0.05  # 5% daily loss limit
+  max_orders_per_day: 50
+
+  # Monitoring
+  heartbeat_interval_seconds: 60
+  snapshot_interval_seconds: 300  # 5 minutes
+
+# Logging
+# -------
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_to_file: true
+  log_file: "./logs/backtest.log"
+  log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Debugging
+# ---------
+debug:
+  save_indicator_values: false
+  save_signal_history: true
+  verbose_order_execution: false
+  plot_live_charts: false

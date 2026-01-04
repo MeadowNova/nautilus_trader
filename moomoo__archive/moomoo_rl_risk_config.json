@@ -1,0 +1,327 @@
+{
+  "meta": {
+    "description": "Risk Management Configuration for Moomoo RL Paper Trading System",
+    "account_type": "paper",
+    "initial_capital": 100000.00,
+    "base_currency": "USD",
+    "created_date": "2025-12-09",
+    "version": "1.0.0",
+    "strategies": ["pairs_trading", "momentum_breakout", "covered_calls"]
+  },
+
+  "position_limits": {
+    "description": "Position-level risk constraints",
+
+    "max_position_size_usd": 10000.00,
+    "max_position_size_pct_account": 0.10,
+    "max_position_size_comments": "Maximum $10,000 or 10% of account per position, whichever is smaller",
+
+    "max_concurrent_positions": 8,
+    "max_concurrent_positions_per_strategy": {
+      "pairs_trading": 2,
+      "momentum_breakout": 4,
+      "covered_calls": 2
+    },
+
+    "max_single_stock_exposure_pct": 0.15,
+    "max_single_stock_exposure_comments": "No single stock can exceed 15% of portfolio ($15,000)"
+  },
+
+  "exposure_limits": {
+    "description": "Portfolio-level exposure constraints",
+
+    "max_gross_exposure_pct": 0.80,
+    "max_gross_exposure_usd": 80000.00,
+    "max_gross_exposure_comments": "Total long + short positions cannot exceed 80% of account",
+
+    "max_net_exposure_pct": 0.60,
+    "max_net_exposure_usd": 60000.00,
+    "max_net_exposure_comments": "Net directional exposure (long - short) limited to 60%",
+
+    "max_sector_exposure_pct": 0.30,
+    "max_sector_exposure_usd": 30000.00,
+    "sector_classification": "GICS_level_1",
+
+    "max_correlation_between_positions": 0.75,
+    "max_correlation_comments": "Avoid highly correlated positions to reduce concentration risk"
+  },
+
+  "risk_thresholds": {
+    "description": "Loss limits and circuit breakers",
+
+    "daily_loss_limit_pct": 0.03,
+    "daily_loss_limit_usd": 3000.00,
+    "daily_loss_action": "halt_new_trades",
+    "daily_loss_comments": "3% daily loss limit - conservative for RL learning phase",
+
+    "weekly_loss_limit_pct": 0.05,
+    "weekly_loss_limit_usd": 5000.00,
+    "weekly_loss_action": "halt_trading_until_review",
+
+    "max_drawdown_pct": 0.10,
+    "max_drawdown_usd": 10000.00,
+    "max_drawdown_action": "emergency_liquidation",
+    "max_drawdown_comments": "10% drawdown from peak triggers emergency stop",
+
+    "per_trade_risk_pct": 0.01,
+    "per_trade_risk_usd": 1000.00,
+    "per_trade_risk_comments": "Risk 1% of capital per trade (1R = $1,000)"
+  },
+
+  "r_multiple_tracking": {
+    "description": "Performance measurement in standardized risk units",
+
+    "initial_r_value": 1000.00,
+    "initial_r_comments": "1R = $1,000 (1% of $100,000 account)",
+
+    "stop_loss_method": "atr_based",
+    "stop_loss_atr_multiple": 2.0,
+    "stop_loss_fallback_pct": 0.02,
+    "stop_loss_comments": "Stop loss at 2x ATR or 2% of entry price, whichever is greater",
+
+    "target_r_multiples": {
+      "take_profit_1": {
+        "r_multiple": 1.0,
+        "exit_percentage": 0.33,
+        "comments": "Exit 33% of position at 1R profit ($1,000)"
+      },
+      "take_profit_2": {
+        "r_multiple": 2.0,
+        "exit_percentage": 0.33,
+        "comments": "Exit another 33% at 2R profit ($2,000)"
+      },
+      "take_profit_3": {
+        "r_multiple": 3.0,
+        "exit_percentage": 0.34,
+        "comments": "Trail stop for remaining 34% targeting 3R ($3,000)"
+      }
+    },
+
+    "expectancy_targets": {
+      "minimum_expectancy_r": 0.10,
+      "minimum_expectancy_comments": "Minimum 0.10R per trade to continue strategy",
+      "target_expectancy_r": 0.25,
+      "target_win_rate_pct": 0.40,
+      "target_avg_win_r": 2.0,
+      "target_avg_loss_r": 1.0,
+      "expectancy_formula": "(win_rate * avg_win_r) - (loss_rate * avg_loss_r)",
+      "expected_expectancy": 0.20
+    },
+
+    "minimum_trades_for_evaluation": 30,
+    "performance_review_interval_days": 7
+  },
+
+  "rate_limiting": {
+    "description": "Order frequency and execution constraints",
+
+    "orders_per_minute": 10,
+    "orders_per_hour": 60,
+    "orders_per_day": 200,
+
+    "fills_per_minute": 5,
+    "fills_per_hour": 30,
+
+    "cancel_rate_limit_per_minute": 20,
+
+    "minimum_order_interval_seconds": 2,
+    "minimum_order_interval_comments": "Prevent rapid-fire orders",
+
+    "max_order_value_usd": 10000.00,
+    "max_order_quantity_shares": 1000,
+
+    "rate_limit_breach_action": "queue_orders"
+  },
+
+  "position_sizing": {
+    "description": "Dynamic position sizing algorithms",
+
+    "primary_method": "volatility_adjusted_fixed_fractional",
+
+    "fixed_fractional": {
+      "risk_per_trade_pct": 0.01,
+      "max_position_pct": 0.10
+    },
+
+    "volatility_adjusted": {
+      "base_atr_period": 14,
+      "atr_multiplier_for_stop": 2.0,
+      "target_risk_per_trade_pct": 0.01
+    },
+
+    "kelly_criterion": {
+      "enabled": false,
+      "kelly_fraction": 0.25,
+      "min_trades_before_kelly": 50,
+      "kelly_comments": "Use 1/4 Kelly after 50+ trades with positive expectancy"
+    },
+
+    "scaling": {
+      "scale_in_enabled": true,
+      "max_scale_in_entries": 3,
+      "scale_in_distance_r": 0.5,
+      "scale_out_enabled": true,
+      "scale_out_at_r_multiples": [1.0, 2.0, 3.0]
+    }
+  },
+
+  "emergency_triggers": {
+    "description": "Automatic protective actions",
+
+    "halt_new_positions": {
+      "daily_loss_pct_trigger": 0.02,
+      "consecutive_losses_trigger": 4,
+      "win_rate_below_trigger": 0.25,
+      "min_trades_for_win_rate": 10
+    },
+
+    "reduce_position_sizes": {
+      "trigger_drawdown_pct": 0.05,
+      "reduction_factor": 0.50,
+      "comments": "Reduce position sizes by 50% when drawdown exceeds 5%"
+    },
+
+    "emergency_liquidation": {
+      "trigger_drawdown_pct": 0.10,
+      "trigger_daily_loss_pct": 0.05,
+      "liquidation_method": "market_orders",
+      "liquidation_priority": "largest_losers_first"
+    },
+
+    "manual_override_required": {
+      "after_emergency_liquidation": true,
+      "after_daily_loss_limit": true,
+      "after_weekly_loss_limit": true
+    }
+  },
+
+  "strategy_specific_config": {
+    "pairs_trading": {
+      "enabled": true,
+      "max_positions": 2,
+      "max_exposure_per_leg_pct": 0.08,
+      "zscore_entry_threshold": 2.0,
+      "zscore_exit_threshold": 0.5,
+      "zscore_stop_loss_threshold": 3.0,
+      "max_holding_days": 5,
+      "min_correlation": 0.85,
+      "spread_monitoring_interval_seconds": 60
+    },
+
+    "momentum_breakout": {
+      "enabled": true,
+      "max_positions": 4,
+      "max_exposure_per_position_pct": 0.08,
+      "breakout_lookback_period": 20,
+      "volume_confirmation_multiplier": 1.5,
+      "rsi_min": 55,
+      "rsi_max": 75,
+      "atr_stop_multiple": 2.0,
+      "atr_profit_target_multiple": 3.0,
+      "trailing_stop_atr_multiple": 1.5,
+      "max_holding_days": 10
+    },
+
+    "covered_calls": {
+      "enabled": true,
+      "max_positions": 2,
+      "shares_per_position": 100,
+      "target_delta": 0.30,
+      "max_delta": 0.35,
+      "dte_min": 30,
+      "dte_max": 45,
+      "min_premium_pct": 0.01,
+      "profit_target_pct": 0.50,
+      "roll_threshold_dte": 7
+    }
+  },
+
+  "monitoring_config": {
+    "description": "Risk monitoring schedules",
+
+    "risk_check_interval_seconds": 30,
+    "position_update_interval_seconds": 10,
+    "portfolio_report_interval_minutes": 15,
+    "daily_summary_time": "16:00:00",
+    "timezone": "America/New_York",
+
+    "alerts": {
+      "daily_loss_warning_pct": 0.02,
+      "position_size_warning_pct": 0.08,
+      "drawdown_warning_pct": 0.05,
+      "correlation_warning_threshold": 0.70,
+      "losing_streak_warning": 3
+    },
+
+    "logging": {
+      "log_all_orders": true,
+      "log_all_fills": true,
+      "log_position_changes": true,
+      "log_risk_alerts": true,
+      "log_level": "INFO"
+    }
+  },
+
+  "monte_carlo_stress_test": {
+    "description": "Simulation parameters for risk validation",
+
+    "num_simulations": 1000,
+    "num_trades_per_simulation": 100,
+    "starting_capital": 100000.00,
+
+    "scenarios": {
+      "baseline": {
+        "win_rate": 0.40,
+        "avg_win_r": 2.0,
+        "avg_loss_r": 1.0
+      },
+      "conservative": {
+        "win_rate": 0.35,
+        "avg_win_r": 1.8,
+        "avg_loss_r": 1.1
+      },
+      "adverse": {
+        "win_rate": 0.30,
+        "avg_win_r": 1.5,
+        "avg_loss_r": 1.2
+      }
+    },
+
+    "acceptable_thresholds": {
+      "max_drawdown_95th_percentile_pct": 0.20,
+      "probability_of_ruin_pct": 0.01,
+      "minimum_final_capital_5th_percentile": 85000.00
+    }
+  },
+
+  "greeks_monitoring": {
+    "description": "Options Greeks limits (for covered calls)",
+
+    "enabled": true,
+    "portfolio_delta_limit": 0.30,
+    "portfolio_gamma_limit": 0.05,
+    "portfolio_vega_limit": 0.25,
+    "portfolio_theta_daily_limit_usd": 100.00,
+    "margin_utilization_limit_pct": 0.50
+  },
+
+  "compliance": {
+    "description": "Regulatory and account compliance",
+
+    "pattern_day_trader_rules": "applicable",
+    "min_account_equity_for_pdt": 25000.00,
+    "max_day_trades_per_5_days": 3,
+
+    "margin_requirements": {
+      "initial_margin_pct": 0.50,
+      "maintenance_margin_pct": 0.25,
+      "margin_call_action": "reduce_positions"
+    },
+
+    "prohibited_actions": [
+      "naked_short_selling",
+      "uncovered_options",
+      "penny_stocks"
+    ]
+  }
+}
