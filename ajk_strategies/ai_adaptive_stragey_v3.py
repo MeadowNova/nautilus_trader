@@ -32,6 +32,7 @@ import pandas as pd
 from collections import deque
 from dataclasses import dataclass
 import joblib
+import os
 
 # --- Machine Learning & Statistical Libraries (to be installed) ---
 # pip install scikit-learn xgboost hmmlearn tensorflow
@@ -39,8 +40,15 @@ from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 # from hmmlearn.hmm import GaussianHMM # Stubbed for demonstration
 import torch
-import tensorflow as tf
-from tensorflow.keras.models import load_model
+
+try:
+    import tensorflow as tf
+    from tensorflow.keras.models import load_model
+    TF_AVAILABLE = True
+except Exception:
+    tf = None
+    load_model = None
+    TF_AVAILABLE = False
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import Bar, BarType
@@ -81,7 +89,7 @@ class AIAdaptiveStrategyConfigV3(StrategyConfig, frozen=True):
     model_path_forecast_lstm: str = "price_forecast_lstm.h5"
     max_bars_per_run: int = 50_000
     confidence_threshold: float = 0.75
-    enable_monte_carlo: bool = True
+    enable_monte_carlo: bool = False  # Disabled for fast backtesting
     max_bars_in_position: int = 100
     feature_warmup_bars: int = 50
 
@@ -149,13 +157,32 @@ class SignalFeatureEngine:
         self.iir_filter = IIRFilter(config.iir_b_coeffs, config.iir_a_coeffs)
         self.lstm_model = None
         self.lstm_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.tf_device = "/GPU:0" if tf.config.list_physical_devices("GPU") else "/CPU:0"
+        self.tf_device = "/CPU:0"
+
+        if TF_AVAILABLE:
+            force_tf_gpu = os.getenv("AI_ADAPTIVE_TF_GPU", "").lower() in {"1", "true", "yes"}
+            try:
+                available_tf_gpus = tf.config.list_physical_devices("GPU")
+            except Exception:
+                available_tf_gpus = []
+
+            if force_tf_gpu and available_tf_gpus:
+                self.tf_device = "/GPU:0"
+            else:
+                try:
+                    tf.config.set_visible_devices([], "GPU")
+                except Exception:
+                    pass
+                self.tf_device = "/CPU:0"
+
+            try:
+                self.lstm_model = load_model(config.model_path_forecast_lstm, compile=False)
+                print(f"✅ LSTM model loaded; initial device {self.tf_device}")
+            except Exception as e:
+                print(f"⚠️ Warning: LSTM model not found ({e}). Running without it.")
+        else:
+            print("ℹ️ TensorFlow not available; LSTM forecasting disabled.")
         self.warmup_bars = config.feature_warmup_bars
-        try:
-            self.lstm_model = load_model(config.model_path_forecast_lstm, compile=False)
-            print(f"✅ LSTM model loaded; initial device {self.tf_device}")
-        except Exception as e:
-            print(f"⚠️ Warning: LSTM model not found ({e}). Running without it.")
 
     def update(self, price: float):
         self.price_buffer.append(price)
@@ -176,7 +203,7 @@ class SignalFeatureEngine:
 
         # 3. LSTM-based Predictive Feature (Stubbed)
         lstm_forecast = 0.0
-        if self.lstm_model and len(prices) >= 50:
+        if TF_AVAILABLE and self.lstm_model and len(prices) >= 50:
             lstm_input = prices[-50:].reshape(1, 50, 1)
             try:
                 with tf.device(self.tf_device):
@@ -191,6 +218,9 @@ class SignalFeatureEngine:
                             print("ℹ️ LSTM inference falling back to CPU succeeded.")
                     except Exception as cpu_error:
                         print(f"⚠️ LSTM CPU fallback failed: {cpu_error}")
+        elif not TF_AVAILABLE and len(prices) >= 50 and self.lstm_model:
+            # Defensive branch if a model was somehow provided without TF.
+            print("⚠️ LSTM model present but TensorFlow unavailable; skipping inference.")
 
         return {
             "dsp_trend": trend_strength,

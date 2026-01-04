@@ -1,0 +1,585 @@
+{
+  "id": null,
+  "uid": "live-trading-monitor",
+  "title": "Live Trading Monitor",
+  "description": "Real-time monitoring dashboard for live and paper trading sessions",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Session Overview",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}
+    },
+    {
+      "type": "stat",
+      "title": "Active Sessions",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum(ai_live_session_status{status=\"RUNNING\"})",
+        "refId": "A",
+        "legendFormat": "Active"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 1, "color": "green"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1}
+    },
+    {
+      "type": "stat",
+      "title": "Session Runtime",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "ai_live_session_runtime_seconds",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "unit": "s"
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1}
+    },
+    {
+      "type": "stat",
+      "title": "Open Positions",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum(ai_live_open_positions)",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "gray"},
+              {"value": 1, "color": "blue"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1}
+    },
+    {
+      "type": "stat",
+      "title": "Total Trades",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum(ai_live_trades_total)",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 1}
+    },
+    {
+      "type": "stat",
+      "title": "Win Rate",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "avg(ai_live_win_rate_pct)",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "unit": "percent"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 45, "color": "orange"},
+              {"value": 55, "color": "green"}
+            ]
+          },
+          "min": 0,
+          "max": 100
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 1}
+    },
+    {
+      "type": "stat",
+      "title": "Unacknowledged Alerts",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum(ai_live_alerts_unacknowledged)",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 1, "color": "orange"},
+              {"value": 5, "color": "red"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1}
+    },
+    {
+      "type": "row",
+      "title": "Performance & P&L",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}
+    },
+    {
+      "type": "timeseries",
+      "title": "Total Equity",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "ai_live_equity_total",
+        "refId": "A",
+        "legendFormat": "{{strategy_id}} ({{environment}})"
+      }],
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          },
+          "unit": "currencyUSD"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6}
+    },
+    {
+      "type": "timeseries",
+      "title": "P&L (Realized + Unrealized)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "ai_live_pnl_realized",
+          "refId": "A",
+          "legendFormat": "Realized"
+        },
+        {
+          "expr": "ai_live_pnl_unrealized",
+          "refId": "B",
+          "legendFormat": "Unrealized"
+        },
+        {
+          "expr": "ai_live_pnl_total",
+          "refId": "C",
+          "legendFormat": "Total"
+        }
+      ],
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Total"},
+            "properties": [
+              {"id": "custom.lineWidth", "value": 3}
+            ]
+          }
+        ]
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6}
+    },
+    {
+      "type": "gauge",
+      "title": "Total P&L %",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "avg(ai_live_pnl_total_pct)",
+        "refId": "A"
+      }],
+      "options": {
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": -20, "color": "dark-red"},
+              {"value": -10, "color": "red"},
+              {"value": -5, "color": "orange"},
+              {"value": 0, "color": "yellow"},
+              {"value": 5, "color": "light-green"},
+              {"value": 10, "color": "green"},
+              {"value": 20, "color": "dark-green"}
+            ]
+          },
+          "unit": "percent",
+          "min": -50,
+          "max": 50
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 14}
+    },
+    {
+      "type": "gauge",
+      "title": "Drawdown %",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "avg(ai_live_drawdown_pct)",
+        "refId": "A"
+      }],
+      "options": {
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 5, "color": "yellow"},
+              {"value": 10, "color": "orange"},
+              {"value": 20, "color": "red"}
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 30
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 14}
+    },
+    {
+      "type": "stat",
+      "title": "Profit Factor",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "avg(ai_live_profit_factor)",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 1.0, "color": "yellow"},
+              {"value": 1.5, "color": "green"},
+              {"value": 2.0, "color": "dark-green"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 14}
+    },
+    {
+      "type": "stat",
+      "title": "Sharpe Ratio",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "avg(ai_live_sharpe_ratio)",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": -1, "color": "red"},
+              {"value": 0, "color": "yellow"},
+              {"value": 1, "color": "green"},
+              {"value": 2, "color": "dark-green"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 14}
+    },
+    {
+      "type": "stat",
+      "title": "Total Fees Paid",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum(ai_live_fees_total)",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 18}
+    },
+    {
+      "type": "stat",
+      "title": "Cash Balance",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum(ai_live_equity_cash)",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 18}
+    },
+    {
+      "type": "row",
+      "title": "Positions & Orders",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 22}
+    },
+    {
+      "type": "table",
+      "title": "Open Positions",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "ai_live_position_value > 0",
+        "refId": "A",
+        "format": "table",
+        "instant": true
+      }],
+      "options": {
+        "showHeader": true
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {"Time": true},
+            "indexByName": {},
+            "renameByName": {
+              "instrument_id": "Instrument",
+              "side": "Side",
+              "Value": "Position Value"
+            }
+          }
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 23}
+    },
+    {
+      "type": "timeseries",
+      "title": "Position P&L by Instrument",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "ai_live_position_pnl",
+        "refId": "A",
+        "legendFormat": "{{instrument_id}} ({{side}})"
+      }],
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "currencyUSD"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 23}
+    },
+    {
+      "type": "bargauge",
+      "title": "Orders by Status",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum by (status) (ai_live_orders_submitted_total)",
+        "refId": "A",
+        "legendFormat": "{{status}}"
+      }],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "blue"},
+              {"value": 10, "color": "green"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 31}
+    },
+    {
+      "type": "stat",
+      "title": "Filled Orders",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum(ai_live_orders_filled_total)",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "gray"},
+              {"value": 1, "color": "green"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 31}
+    },
+    {
+      "type": "stat",
+      "title": "Rejected Orders",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum(ai_live_orders_rejected_total)",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 1, "color": "orange"},
+              {"value": 5, "color": "red"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 31}
+    },
+    {
+      "type": "row",
+      "title": "Alerts & Risk",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 39}
+    },
+    {
+      "type": "table",
+      "title": "Recent Alerts",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "ai_live_alerts_total > 0",
+        "refId": "A",
+        "format": "table",
+        "instant": true
+      }],
+      "options": {
+        "showHeader": true
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {"Time": true},
+            "renameByName": {
+              "alert_type": "Type",
+              "severity": "Severity",
+              "Value": "Count"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Severity"},
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {"type": "value", "value": "INFO", "color": "blue"},
+                  {"type": "value", "value": "WARNING", "color": "orange"},
+                  {"type": "value", "value": "CRITICAL", "color": "red"},
+                  {"type": "value", "value": "EMERGENCY", "color": "dark-red"}
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 40}
+    }
+  ]
+}

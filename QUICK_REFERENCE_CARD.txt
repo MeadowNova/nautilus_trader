@@ -1,0 +1,381 @@
+================================================================================
+RISK MANAGEMENT SYSTEM - QUICK REFERENCE CARD
+================================================================================
+
+Account: MOOMOO-1252643 | Balance: $100,000 | Strategy: Options Trading
+System: Production Ready | Status: Fully Tested | Go-Live: Immediate
+
+================================================================================
+CRITICAL LIMITS (ENFORCE STRICTLY)
+================================================================================
+
+POSITION LIMITS:
+  Max contracts per option:   5
+  Max concurrent positions:   5
+  Max notional exposure:      $10,000 (10% of account)
+
+DAILY LIMITS:
+  Max daily loss:             $1,000 (1% of account)
+  Daily loss triggers:        WARNING at $800 | CRITICAL at $950 | HALT at $1,000
+
+TRADE LIMITS:
+  Max per trade:              1% of account = $1,000
+  Min premium:                $0.01 per contract
+  Max premium:                $500 per contract
+
+EXPIRATION RULES:
+  Min days:                   2 (never trade <2 DTE)
+  Max days:                   60 (avoid decay beyond 60 DTE)
+  Auto close:                 <3 DTE at market
+
+BUYING POWER:
+  Min buffer:                 20% ($20,000 always reserved)
+
+RATE LIMITS:
+  Max orders:                 15 per 30 seconds (Moomoo limit)
+
+================================================================================
+PRE-TRADE CHECKLIST (ALL MUST PASS)
+================================================================================
+
+Before submitting ANY order:
+
+[ ] 1. Rate Limit       - Not submitted 15 orders in last 30 sec
+[ ] 2. Daily Loss       - Current loss < $1,000 limit
+[ ] 3. Position Count   - Current positions < 5
+[ ] 4. Notional         - Total exposure + new position <= $10,000
+[ ] 5. Contract Qty     - Order quantity <= 5 contracts
+[ ] 6. Expiration       - 2 <= DTE <= 60 days
+[ ] 7. Buying Power     - 20% buffer maintained
+[ ] 8. Account Risk     - Trade risk <= 1% of account ($1,000)
+[ ] 9. Premium Width    - Premium >= $0.01 per contract
+[ ] 10. Premium Cap     - Premium <= $500 per contract
+
+IF ANY CHECK FAILS: DO NOT SUBMIT ORDER - System will reject it
+
+================================================================================
+STOP LOSS & TAKE PROFIT TARGETS
+================================================================================
+
+ENTRY PRICE $2.50:
+  Stop Loss (50%):            $1.25 per contract
+  Take Profit (200%):         $7.50 per contract
+  Max Loss per contract:      $125 (at stop loss)
+  Max Gain per contract:      $500 (at take profit)
+
+For 2-contract position:
+  Max Loss:                   $250
+  Max Gain:                   $1,000
+
+RULE: Close at stop OR close at profit. Don't let losers run.
+
+================================================================================
+ALERT LEVELS & ACTIONS
+================================================================================
+
+WARNING LEVEL (80% of limit reached):
+  - Log warning
+  - Review position
+  - Consider reducing size
+  - Continue monitoring closely
+
+CRITICAL LEVEL (95%+ of limit):
+  - Immediate notification
+  - Review all positions
+  - Prepare to reduce exposure
+  - Consider closing smallest position
+
+HALT CONDITION (daily loss > $1,000):
+  - STOP ALL NEW ENTRIES
+  - Can still close existing positions
+  - Can still cancel pending orders
+  - System enforces this automatically
+
+================================================================================
+DAILY WORKFLOW
+================================================================================
+
+PRE-MARKET (Before 9:30 AM):
+  [ ] Check system is running
+  [ ] Verify position monitor active
+  [ ] Review overnight P&L
+  [ ] Confirm account balance
+  [ ] Test one validation
+
+DURING MARKET (9:30 AM - 4:00 PM):
+  [ ] Validate each order (10-point check)
+  [ ] Get position sizing recommendation
+  [ ] Submit order to Moomoo
+  [ ] Monitor positions (auto 30-sec check)
+  [ ] Review alerts immediately
+  [ ] Close winners at 2R (200% profit)
+  [ ] Close losers at -1R (50% loss)
+
+END OF MARKET (4:00 PM - 5:00 PM):
+  [ ] Close positions with <3 DTE
+  [ ] Generate daily risk report
+  [ ] Review trade P&L
+  [ ] Export trade data
+  [ ] Log any issues
+
+EVENING (After 5:00 PM):
+  [ ] Analyze daily trades
+  [ ] Calculate R-multiples
+  [ ] Check win rate
+  [ ] Review any alerts
+  [ ] Plan next day
+
+================================================================================
+POSITION SIZING QUICK CALC
+================================================================================
+
+Formula: Contracts = (Account Size x 1%) / (Premium x 100)
+
+Examples:
+  Premium $1.00:  10 contracts (but max 5) = 5 contracts
+  Premium $2.50:  4 contracts
+  Premium $5.00:  2 contracts
+  Premium $10.00: 1 contract
+
+Always take the SMALLER of:
+  1. Calculated size
+  2. 5-contract maximum
+  3. Amount that keeps notional exposure <= $10,000
+
+================================================================================
+R-MULTIPLE QUICK REFERENCE
+================================================================================
+
+What is R?
+  R = Risk = Entry Price - Stop Loss
+  Example: Entry $2.50, Stop $1.25 = 1R = $1.25 per contract
+
+R-Multiple = Profit/Loss / Risk
+  0.5R = Won 50% of your risk = Good trade
+  1.0R = Won 100% of your risk = Excellent trade
+  2.0R = Won 200% of your risk = Outstanding trade
+  -1.0R = Lost your full risk = Stop hit (normal)
+  -0.5R = Stopped out with partial loss = Very good
+  -2.0R = Doubled down (bad!) = Should not happen
+
+TARGET STATISTICS:
+  Win Rate: 45%+     (yes, you can profit with 45%!)
+  Avg Win:  1.0R+    (win 1x your risk minimum)
+  Avg Loss: -0.5R+   (lose 0.5x your risk maximum)
+  Expectancy: >0     (must be positive)
+
+Examples of Positive Expectancy:
+  - 50% win rate, 1R wins, -0.5R losses = +0.25R expectancy
+  - 45% win rate, 1.5R wins, -0.5R losses = +0.425R expectancy
+  - 40% win rate, 2R wins, -1R losses = +0.20R expectancy
+
+================================================================================
+FILES YOU NEED TO KNOW
+================================================================================
+
+Configuration (modify here):
+  /home/ajk/Nautilus/nautilus_trader/config/options_risk_config.py
+
+Validation (before every trade):
+  /home/ajk/Nautilus/nautilus_trader/scripts/pre_trade_checks.py
+
+Monitoring (runs automatically):
+  /home/ajk/Nautilus/nautilus_trader/scripts/risk_monitor.py
+
+Reporting (performance tracking):
+  /home/ajk/Nautilus/nautilus_trader/scripts/risk_reporter.py
+
+Integration (your main interface):
+  /home/ajk/Nautilus/nautilus_trader/scripts/integration_example.py
+
+Testing (verify system works):
+  /home/ajk/Nautilus/nautilus_trader/scripts/test_risk_system.py
+
+Logs (where data is stored):
+  /home/ajk/Nautilus/nautilus_trader/logs/
+
+================================================================================
+DOCUMENTATION QUICK MAP
+================================================================================
+
+First time?
+  Read: QUICK_START_RISK.md (10 minutes)
+
+Need details?
+  Read: RISK_MANAGEMENT.md (comprehensive)
+
+Need code?
+  Use: MOOMOO_INTEGRATION_SNIPPETS.md (copy-paste ready)
+
+Need checklist?
+  Use: INTEGRATION_CHECKLIST.md (step-by-step)
+
+Need overview?
+  Read: RISK_SYSTEM_SUMMARY.md (complete picture)
+
+================================================================================
+EMERGENCY PROCEDURES
+================================================================================
+
+DAILY LOSS LIMIT EXCEEDED ($1,000+):
+  1. STOP submitting new orders immediately
+  2. Can close existing positions
+  3. Can cancel pending orders
+  4. System enforces this (orders rejected)
+  5. Review what happened
+  6. Reduce position sizes for next day
+
+TOO MANY ALERTS:
+  1. Reduce position sizes
+  2. Close smallest losing position
+  3. Review Greeks exposure
+  4. Check notional exposure
+
+MOOMOO CONNECTION LOST:
+  1. Check internet connection
+  2. Try refreshing positions
+  3. If still down: close all positions manually
+  4. Log all trades manually
+  5. Email trades to yourself with timestamps
+
+SYSTEM CRASHES:
+  1. Manually close all open positions
+  2. Note all entry/exit times and prices
+  3. Log trades manually with R-multiples
+  4. Restart system
+  5. Verify all trades recorded
+
+================================================================================
+COMMON QUESTIONS
+================================================================================
+
+Q: Can I exceed position size recommendation?
+A: No. System enforces 5-contract maximum per option.
+
+Q: What if I hit daily loss limit mid-trade?
+A: System blocks new entries but you can still close positions.
+
+Q: When do I take profits?
+A: At 200% of entry price (2R target). Don't get greedy.
+
+Q: When do I cut losses?
+A: At 50% of entry price (1R stop loss). Don't hold losers.
+
+Q: How often do I review positions?
+A: System checks every 30 seconds. You review on alerts.
+
+Q: What's a good win rate?
+A: 45%+ is sustainable if wins are bigger than losses (1R+ wins, -0.5R losses).
+
+Q: How do I know if I'm profitable?
+A: Check expectancy per trade. Must be positive: (WR% x AvgW) - (LR% x AvgL) > 0
+
+Q: Can I adjust risk limits?
+A: Yes, in options_risk_config.py, but only after 3+ months profitable.
+
+Q: Do I really need stops?
+A: YES. Stops at 50% of premium are mandatory for risk control.
+
+Q: How many trades per day?
+A: Quality over quantity. Follow the system, not a trade count.
+
+================================================================================
+SUCCESS FORMULA
+================================================================================
+
+1. DISCIPLINE
+   - Follow ALL pre-trade checks (10-point validation)
+   - Never exceed position limits
+   - Always use stops and profit targets
+   - Track every trade
+
+2. MONITORING
+   - Check alerts daily
+   - Review positions every 30 seconds (auto)
+   - Review daily reports
+   - Track P&L
+
+3. ANALYSIS
+   - Calculate win rate weekly
+   - Calculate expectancy per trade
+   - Analyze biggest wins/losses
+   - Track R-multiples
+
+4. ADJUSTMENT
+   - Modify position size if needed
+   - Tighten/loosen stops based on results
+   - Adjust timeframes if patterns emerge
+   - Review strategy monthly
+
+5. PATIENCE
+   - Trade only setups that pass validation
+   - Wait for your edge
+   - Let winners run to targets
+   - Cut losses at stops
+
+RESULT: Consistent, profitable trading with controlled risk
+
+================================================================================
+DAILY CHECKLIST (Print This)
+================================================================================
+
+MORNING:
+  [ ] System started and verified
+  [ ] Positions monitored
+  [ ] Account balance checked
+  [ ] Alert system armed
+
+TRADING:
+  [ ] Validate before every order (10-point check)
+  [ ] Get position size recommendation
+  [ ] Monitor every 30 seconds (auto)
+  [ ] Close winners at 2R
+  [ ] Close losers at stop
+
+EVENING:
+  [ ] Generate daily report
+  [ ] Export trade data
+  [ ] Calculate trade stats
+  [ ] Log any issues
+  [ ] Plan next day
+
+WEEKLY:
+  [ ] Review all trades
+  [ ] Calculate win rate
+  [ ] Calculate expectancy
+  [ ] Review largest wins/losses
+  [ ] Adjust strategy if needed
+
+================================================================================
+REMEMBER
+================================================================================
+
+The risk management system is here to PROTECT you.
+
+It enforces limits so you don't have to think about them.
+It validates orders so you catch mistakes before execution.
+It tracks trades so you know what's working.
+It alerts you to problems so you can act quickly.
+
+Your job is simple:
+  1. Validate trades
+  2. Monitor positions
+  3. Log trades
+  4. Review reports
+
+The system does the rest.
+
+Risk discipline = Long-term success
+No discipline = Quick failure
+
+Choose wisely.
+
+================================================================================
+
+System Status: OPERATIONAL
+Last Updated: December 9, 2025
+Version: 1.0 Production Ready
+
+Ready to trade with full risk controls!
+
+================================================================================
