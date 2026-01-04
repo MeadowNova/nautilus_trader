@@ -1,0 +1,10 @@
+{
+  "trader_id": "PAPER-TRADER-001",
+  "environment": "paper",
+  "paper_trading": true,
+  "initial_balance": 100000,
+  "currency": "USD",
+  "instruments": ["BTCUSDT.BINANCE"],
+  "data_provider": "BINANCE",
+  "use_testnet": true
+}

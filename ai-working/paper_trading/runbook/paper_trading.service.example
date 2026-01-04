@@ -1,0 +1,15 @@
+[Unit]
+Description=Paper Trading Sandbox (NautilusTrader)
+After=network.target
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=/home/%USER%/Nautilus/nautilus_trader
+Environment=PYTHONUNBUFFERED=1
+Environment=PAPER_TRADING_ENABLED=true
+ExecStart=/home/%USER%/Nautilus/nautilus_trader/.venv/bin/python3 scripts/start_paper_trading_sandbox.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
