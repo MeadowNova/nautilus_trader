@@ -42,8 +42,12 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Alt perpetuals: ETHUSD, SOLUSD, etc.
 
 symbol = "XBTUSD"  # Bitcoin perpetual swap
-instrument_id = InstrumentId.from_str(f"{symbol}.{BITMEX}")
 order_qty = Decimal("100")  # Contract size in USD
+
+# symbol = "SOLUSDT"  # Solana quoted in USDT spot
+# order_qty = Decimal("0.1")  # Fractional size
+
+instrument_id = InstrumentId.from_str(f"{symbol}.{BITMEX}")
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -55,8 +59,8 @@ config_node = TradingNodeConfig(
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_instrument_ids=[instrument_id],  # Only reconcile this instrument
-        # open_check_interval_secs=5.0,
-        # open_check_open_only=True,
+        open_check_interval_secs=5.0,
+        open_check_open_only=False,
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
@@ -93,15 +97,25 @@ config_tester = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],
     order_qty=order_qty,
+    # order_display_qty=Decimal(0),  # Must be zero (hidden) or a positive multiple of lot size 100
+    enable_buys=True,
+    enable_sells=True,
     use_post_only=True,
     tob_offset_ticks=0,
     # modify_orders_to_maintain_tob_offset=True,
-    open_position_on_start_qty=order_qty,
-    open_position_time_in_force=TimeInForce.IOC,
+    # open_position_on_start_qty=order_qty,
+    # open_position_time_in_force=TimeInForce.IOC,
     close_positions_time_in_force=TimeInForce.IOC,
+    # enable_stop_buys=True,
+    # enable_stop_sells=True,
+    # stop_order_type=OrderType.STOP_MARKET,
+    # stop_trigger_type=TriggerType.MARK_PRICE,
+    # enable_brackets=True,
     # test_reject_post_only=True,
     # cancel_orders_on_stop=False,
     # close_positions_on_stop=False,
+    # use_batch_cancel_on_stop=True,
+    # use_individual_cancels_on_stop=True,
     log_data=False,
     # dry_run=True,
 )

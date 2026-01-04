@@ -298,7 +298,7 @@ impl Price {
         // Scale down the raw value to match the precision
         let precision_diff = FIXED_PRECISION.saturating_sub(self.precision);
         let rescaled_raw = self.raw / PriceRaw::pow(10, u32::from(precision_diff));
-        #[allow(clippy::unnecessary_cast)] // Required for precision modes
+        #[allow(clippy::unnecessary_cast, reason = "Required for precision modes")]
         Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
     }
 
@@ -398,7 +398,6 @@ impl From<&Price> for f64 {
 impl Hash for Price {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.raw.hash(state);
-        self.precision.hash(state);
     }
 }
 

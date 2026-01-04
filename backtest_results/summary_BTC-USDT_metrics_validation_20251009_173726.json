@@ -1,0 +1,14 @@
+{
+  "instrument": "BTC-USDT",
+  "scenario": "metrics_validation",
+  "timestamp": "20251009_173726",
+  "date_range": "2024-01-01 to 2024-12-31",
+  "bars_processed": 5000,
+  "duration_seconds": 258.922915,
+  "total_equity": 539641.7,
+  "net_pnl": 439641.69999999995,
+  "pnl_pct": 439.64169999999996,
+  "total_trades": 0,
+  "win_rate": 0.0,
+  "profit_factor": 0.0
+}

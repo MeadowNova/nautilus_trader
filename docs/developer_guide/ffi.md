@@ -36,7 +36,7 @@ once the capsule becomes unreachable. The closure/destructor is responsible
 for reconstructing the original `Box<T>` or `Vec<T>` and letting it drop.
 
 ```rust
-Python::with_gil(|py| {
+Python::attach(|py| {
     // allocate the value on the heap
     let my_data = MyStruct::new();
 
@@ -84,9 +84,9 @@ pub extern "C" fn orderbook_drop(book: OrderBook_API) {
 
 Memory-safety requirements are therefore:
 
-1.  Every constructor (`*_new`) **must** have a matching `*_drop` exported
+1. Every constructor (`*_new`) **must** have a matching `*_drop` exported
     next to it.
-2.  The *Python/Cython* binding must guarantee that `*_drop` is invoked
+2. The *Python/Cython* binding must guarantee that `*_drop` is invoked
     exactly once. Two approaches are accepted:
 
     • Wrap the pointer in a `PyCapsule` created with

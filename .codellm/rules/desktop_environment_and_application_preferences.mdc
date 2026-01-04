@@ -1,0 +1,11 @@
+---
+description: helpful for understanding the working environment and user application preferences
+globs: ["*"]
+alwaysApply: true
+---
+
+- Primary editor is VS Code (with common extensions enabled)
+- Default browser is Chrome for web tasks
+- Organize project files under ~/Projects directory
+- Prefer terminal commands over GUI interactions when possible
+- Always use dark theme in editors and terminals

@@ -16,6 +16,8 @@
 //! Python bindings for the [`Cache`] component.
 
 use nautilus_core::python::to_pyvalue_err;
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     data::{
         Bar, BarType, FundingRateUpdate, QuoteTick, TradeTick,
@@ -156,13 +158,17 @@ impl Cache {
     }
 
     #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&mut self, py: Python, instrument: PyObject) -> PyResult<()> {
+    fn py_add_instrument(&mut self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
         self.add_instrument(instrument_any).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "instrument")]
-    fn py_instrument(&self, py: Python, instrument_id: InstrumentId) -> PyResult<Option<PyObject>> {
+    fn py_instrument(
+        &self,
+        py: Python,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Option<Py<PyAny>>> {
         match self.instrument(&instrument_id) {
             Some(instrument) => Ok(Some(instrument_any_to_pyobject(py, instrument.clone())?)),
             None => Ok(None),
@@ -178,7 +184,7 @@ impl Cache {
     }
 
     #[pyo3(name = "instruments")]
-    fn py_instruments(&self, py: Python, venue: Option<Venue>) -> PyResult<Vec<PyObject>> {
+    fn py_instruments(&self, py: Python, venue: Option<Venue>) -> PyResult<Vec<Py<PyAny>>> {
         let mut py_instruments = Vec::new();
 
         match venue {
@@ -206,7 +212,7 @@ impl Cache {
     fn py_add_order(
         &mut self,
         py: Python,
-        order: PyObject,
+        order: Py<PyAny>,
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
         replace_existing: Option<bool>,
@@ -222,7 +228,7 @@ impl Cache {
     }
 
     #[pyo3(name = "order")]
-    fn py_order(&self, py: Python, client_order_id: ClientOrderId) -> PyResult<Option<PyObject>> {
+    fn py_order(&self, py: Python, client_order_id: ClientOrderId) -> PyResult<Option<Py<PyAny>>> {
         match self.order(&client_order_id) {
             Some(order) => Ok(Some(order_any_to_pyobject(py, order.clone())?)),
             None => Ok(None),
@@ -296,7 +302,7 @@ impl Cache {
     fn py_add_position(
         &mut self,
         py: Python,
-        position: PyObject,
+        position: Py<PyAny>,
         oms_type: OmsType,
     ) -> PyResult<()> {
         let position_obj = position.extract::<Position>(py)?;
@@ -305,7 +311,7 @@ impl Cache {
     }
 
     #[pyo3(name = "position")]
-    fn py_position(&self, py: Python, position_id: PositionId) -> PyResult<Option<PyObject>> {
+    fn py_position(&self, py: Python, position_id: PositionId) -> PyResult<Option<Py<PyAny>>> {
         match self.position(&position_id) {
             Some(position) => Ok(Some(position.clone().into_pyobject(py)?.into())),
             None => Ok(None),
@@ -498,5 +504,57 @@ impl Cache {
     #[pyo3(name = "synthetic_ids")]
     fn py_synthetic_ids(&self) -> Vec<InstrumentId> {
         self.synthetic_ids().into_iter().copied().collect()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "add_pool")]
+    fn py_add_pool(&mut self, pool: Pool) -> PyResult<()> {
+        self.add_pool(pool).map_err(to_pyvalue_err)
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool")]
+    fn py_pool(&self, instrument_id: InstrumentId) -> Option<Pool> {
+        self.pool(&instrument_id).cloned()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_ids")]
+    fn py_pool_ids(&self, venue: Option<Venue>) -> Vec<InstrumentId> {
+        self.pool_ids(venue.as_ref())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pools")]
+    fn py_pools(&self, venue: Option<Venue>) -> Vec<Pool> {
+        self.pools(venue.as_ref()).into_iter().cloned().collect()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "add_pool_profiler")]
+    fn py_add_pool_profiler(&mut self, pool_profiler: PoolProfiler) -> PyResult<()> {
+        self.add_pool_profiler(pool_profiler)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_profiler")]
+    fn py_pool_profiler(&self, instrument_id: InstrumentId) -> Option<PoolProfiler> {
+        self.pool_profiler(&instrument_id).cloned()
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_profiler_ids")]
+    fn py_pool_profiler_ids(&self, venue: Option<Venue>) -> Vec<InstrumentId> {
+        self.pool_profiler_ids(venue.as_ref())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "pool_profilers")]
+    fn py_pool_profilers(&self, venue: Option<Venue>) -> Vec<PoolProfiler> {
+        self.pool_profilers(venue.as_ref())
+            .into_iter()
+            .cloned()
+            .collect()
     }
 }

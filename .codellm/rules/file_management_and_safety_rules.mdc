@@ -1,0 +1,11 @@
+---
+description: File management and safety rules
+globs: ["*"]
+alwaysApply: true
+---
+
+- Never permanently delete files without confirmation
+- Back up configuration files before editing
+- Use clear, consistent file naming
+- Store important documents in ~/Documents/organized/
+- Always explain the purpose of file operations

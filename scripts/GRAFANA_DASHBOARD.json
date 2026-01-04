@@ -1,0 +1,292 @@
+{
+  "dashboard": {
+    "title": "Multi-Factor Strategy Dashboard",
+    "tags": ["trading", "multifactor", "quant"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Portfolio Value",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "multifactor_portfolio_value_dollars",
+            "legendFormat": "Portfolio Value"
+          }
+        ],
+        "yaxes": [
+          {"format": "currencyUSD", "label": "Portfolio Value"}
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Max Drawdown",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "multifactor_max_drawdown * 100",
+            "legendFormat": "Max Drawdown %"
+          }
+        ],
+        "yaxes": [
+          {"format": "percent", "label": "Drawdown"}
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Sharpe Ratio",
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 8, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "multifactor_sharpe_ratio"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "background",
+          "textMode": "value_and_name"
+        },
+        "thresholds": {
+          "steps": [
+            {"value": 0, "color": "red"},
+            {"value": 0.5, "color": "yellow"},
+            {"value": 1.0, "color": "green"}
+          ]
+        }
+      },
+      {
+        "id": 4,
+        "title": "Win Rate",
+        "type": "stat",
+        "gridPos": {"x": 6, "y": 8, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "avg(multifactor_win_rate) * 100"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "background",
+          "textMode": "value_and_name"
+        },
+        "unit": "percent",
+        "thresholds": {
+          "steps": [
+            {"value": 0, "color": "red"},
+            {"value": 35, "color": "yellow"},
+            {"value": 50, "color": "green"}
+          ]
+        }
+      },
+      {
+        "id": 5,
+        "title": "Cash Balance",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 8, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "multifactor_cash_balance_dollars"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "unit": "currencyUSD"
+      },
+      {
+        "id": 6,
+        "title": "Portfolio Leverage",
+        "type": "gauge",
+        "gridPos": {"x": 18, "y": 8, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "multifactor_portfolio_leverage"
+          }
+        ],
+        "options": {
+          "showThresholdLabels": true,
+          "showThresholdMarkers": true
+        },
+        "thresholds": {
+          "steps": [
+            {"value": 0, "color": "green"},
+            {"value": 1.5, "color": "yellow"},
+            {"value": 2.0, "color": "red"}
+          ]
+        }
+      },
+      {
+        "id": 7,
+        "title": "Alpha Signals by Symbol",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "multifactor_alpha_signal{symbol=\"SPY\"}",
+            "legendFormat": "SPY Signal"
+          },
+          {
+            "expr": "multifactor_alpha_signal{symbol=\"AAPL\"}",
+            "legendFormat": "AAPL Signal"
+          },
+          {
+            "expr": "multifactor_alpha_signal{symbol=\"NVDA\"}",
+            "legendFormat": "NVDA Signal"
+          }
+        ],
+        "yaxes": [
+          {"min": -1, "max": 1, "label": "Signal Strength"}
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Signal Confidence by Symbol",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "multifactor_signal_confidence{symbol=\"SPY\"}",
+            "legendFormat": "SPY Confidence"
+          },
+          {
+            "expr": "multifactor_signal_confidence{symbol=\"AAPL\"}",
+            "legendFormat": "AAPL Confidence"
+          },
+          {
+            "expr": "multifactor_signal_confidence{symbol=\"NVDA\"}",
+            "legendFormat": "NVDA Confidence"
+          }
+        ],
+        "yaxes": [
+          {"min": 0, "max": 1, "label": "Confidence"}
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Market Regime Distribution",
+        "type": "piechart",
+        "gridPos": {"x": 0, "y": 20, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "sum by (symbol) (multifactor_regime_state == 0)",
+            "legendFormat": "Choppy"
+          },
+          {
+            "expr": "sum by (symbol) (multifactor_regime_state == 1)",
+            "legendFormat": "Trending"
+          },
+          {
+            "expr": "sum by (symbol) (multifactor_regime_state == 2)",
+            "legendFormat": "Mean Reverting"
+          },
+          {
+            "expr": "sum by (symbol) (multifactor_regime_state == 3)",
+            "legendFormat": "Volatile"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Factor Exposures (SPY)",
+        "type": "graph",
+        "gridPos": {"x": 8, "y": 20, "w": 16, "h": 8},
+        "targets": [
+          {
+            "expr": "multifactor_factor_momentum{symbol=\"SPY\"}",
+            "legendFormat": "Momentum"
+          },
+          {
+            "expr": "multifactor_factor_mean_reversion{symbol=\"SPY\"}",
+            "legendFormat": "Mean Reversion"
+          },
+          {
+            "expr": "multifactor_factor_volatility{symbol=\"SPY\"}",
+            "legendFormat": "Volatility"
+          },
+          {
+            "expr": "multifactor_factor_volume{symbol=\"SPY\"}",
+            "legendFormat": "Volume"
+          }
+        ],
+        "yaxes": [
+          {"min": -1, "max": 1, "label": "Factor Signal"}
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Trade Count by Exit Reason",
+        "type": "bargauge",
+        "gridPos": {"x": 0, "y": 28, "w": 12, "h": 6},
+        "targets": [
+          {
+            "expr": "sum by (exit_reason) (multifactor_trades_total)",
+            "legendFormat": "{{exit_reason}}"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Trade PnL Distribution",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 28, "w": 12, "h": 6},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.5, rate(multifactor_trade_pnl_dollars_bucket[1h]))",
+            "legendFormat": "Median PnL"
+          },
+          {
+            "expr": "histogram_quantile(0.9, rate(multifactor_trade_pnl_dollars_bucket[1h]))",
+            "legendFormat": "90th Percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.1, rate(multifactor_trade_pnl_dollars_bucket[1h]))",
+            "legendFormat": "10th Percentile"
+          }
+        ],
+        "yaxes": [
+          {"format": "currencyUSD", "label": "PnL"}
+        ]
+      },
+      {
+        "id": 13,
+        "title": "Data Update Performance",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 34, "w": 12, "h": 6},
+        "targets": [
+          {
+            "expr": "rate(multifactor_data_updates_total[5m])",
+            "legendFormat": "{{symbol}} Update Rate"
+          }
+        ],
+        "yaxes": [
+          {"label": "Updates/sec"}
+        ]
+      },
+      {
+        "id": 14,
+        "title": "Strategy Iteration Rate",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 34, "w": 12, "h": 6},
+        "targets": [
+          {
+            "expr": "rate(multifactor_strategy_iterations_total[5m])",
+            "legendFormat": "Iterations/sec"
+          }
+        ],
+        "yaxes": [
+          {"label": "Iterations/sec"}
+        ]
+      }
+    ],
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    }
+  }
+}

@@ -73,7 +73,7 @@ impl HyperliquidCodec {
             Ok(())
         } else {
             Err(HyperliquidError::UrlParsing(format!(
-                "URL must start with ws:// or wss://, got: {}",
+                "URL must start with ws:// or wss://, was: {}",
                 url
             )))
         }
@@ -109,7 +109,7 @@ pub struct HyperliquidWebSocketInnerClient {
     _reader_task: tokio::task::JoinHandle<()>,
     post_router: Arc<PostRouter>,
     post_ids: PostIds,
-    #[allow(dead_code)] // Reserved for future direct WebSocket operations
+    #[allow(dead_code, reason = "Reserved for future direct WebSocket operations")]
     ws_sender: WsSender,
     post_batcher: PostBatcher,
 }
@@ -351,7 +351,7 @@ impl HyperliquidWebSocketInnerClient {
             PostResponsePayload::Info { payload } => payload,
             PostResponsePayload::Error { payload } => return Err(Error::exchange(payload)),
             PostResponsePayload::Action { .. } => {
-                return Err(Error::decode("expected info payload, got action"));
+                return Err(Error::decode("expected info payload, was action"));
             }
         };
         serde_json::from_value(payload).map_err(Error::Serde)

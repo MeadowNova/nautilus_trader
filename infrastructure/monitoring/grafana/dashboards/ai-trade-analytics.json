@@ -1,0 +1,243 @@
+{
+  "id": null,
+  "title": "AI Trade Analytics",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Tracked Backtest Runs",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "count(ai_backtest_total_pnl)",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Completed Trades (Proxy)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(ai_backtest_status{status=\"completed\"})",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Total Backtest PnL",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(ai_backtest_total_pnl)",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Trade PnL Distribution",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "ai_backtest_total_pnl",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Drawdown vs PnL",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "ai_backtest_max_drawdown_pct",
+          "refId": "Drawdown"
+        },
+        {
+          "expr": "ai_backtest_total_pnl",
+          "refId": "PnL"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      }
+    },
+    {
+      "type": "table",
+      "title": "Backtest Health Snapshot",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "ai_backtest_status",
+          "refId": "A",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      }
+    },
+    {
+      "type": "table",
+      "title": "Recent Trades (Postgres)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH selected AS (\n    SELECT id AS backtest_run_id\n    FROM ai_extensions.v_backtest_performance\n    WHERE ('$backtest_run' = 'All' OR run_name = '$backtest_run')\n    ORDER BY completed_at DESC\n    LIMIT 1\n)\nSELECT\n    bt.entry_timestamp AS \"time\",\n    bt.instrument_id,\n    bt.side,\n    bt.quantity,\n    bt.entry_price,\n    bt.exit_price,\n    bt.pnl,\n    bt.pnl_pct,\n    bt.fees_paid\nFROM ai_extensions.v_recent_trades bt\nJOIN selected s ON s.backtest_run_id = bt.backtest_run_id\nORDER BY bt.entry_timestamp DESC\nLIMIT 50;"
+        }
+      ],
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Equity Curve (Postgres)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "WITH selected AS (\n    SELECT id AS backtest_run_id\n    FROM ai_extensions.v_backtest_performance\n    WHERE ('$backtest_run' = 'All' OR run_name = '$backtest_run')\n    ORDER BY completed_at DESC\n    LIMIT 1\n), curve AS (\n    SELECT ec.snapshot_timestamp,\n           ec.equity,\n           ec.cash_balance,\n           ec.drawdown,\n           ec.drawdown_pct\n    FROM ai_extensions.v_backtest_equity_curve ec\n    JOIN selected s ON s.backtest_run_id = ec.backtest_run_id\n)\nSELECT snapshot_timestamp AS \"time\", 'Equity' AS metric, equity AS value FROM curve\nUNION ALL\nSELECT snapshot_timestamp AS \"time\", 'Cash Balance' AS metric, cash_balance AS value FROM curve\nUNION ALL\nSELECT snapshot_timestamp AS \"time\", 'Drawdown %' AS metric, drawdown_pct AS value FROM curve\nORDER BY \"time\", metric;"
+        }
+      ],
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      }
+    },
+    {
+      "type": "table",
+      "title": "Backtest Run Summary (Postgres)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT\n    run_name,\n    instrument_id,\n    total_trades,\n    total_pnl,\n    total_pnl_pct,\n    calculated_win_rate,\n    max_drawdown_pct,\n    completed_at\nFROM ai_extensions.v_backtest_performance\nORDER BY completed_at DESC\nLIMIT 20;"
+        }
+      ],
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "backtest_run",
+        "type": "query",
+        "label": "Backtest Run",
+        "datasource": {
+          "type": "postgres",
+          "uid": "postgres"
+        },
+        "definition": "SELECT run_name FROM ai_extensions.v_backtest_performance ORDER BY completed_at DESC LIMIT 50;",
+        "query": "SELECT run_name FROM ai_extensions.v_backtest_performance ORDER BY completed_at DESC LIMIT 50;",
+        "refresh": 1,
+        "sort": 2,
+        "multi": false,
+        "includeAll": true,
+        "allValue": "All",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "All"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "All"
+          }
+        ]
+      }
+    ]
+  },
+  "time": {
+    "from": "now-14d",
+    "to": "now"
+  }
+}

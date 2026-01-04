@@ -1,0 +1,14 @@
+{
+  "instrument": "ETH-USDT",
+  "scenario": "metrics_validation",
+  "timestamp": "20251009_174233",
+  "date_range": "2024-01-01 to 2024-12-31",
+  "bars_processed": 5000,
+  "duration_seconds": 256.637761,
+  "total_equity": 324472.0,
+  "net_pnl": 224472.0,
+  "pnl_pct": 224.472,
+  "total_trades": 0,
+  "win_rate": 0.0,
+  "profit_factor": 0.0
+}

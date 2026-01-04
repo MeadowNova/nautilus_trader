@@ -1,0 +1,35 @@
+# Nautilus Trader Serena Configuration
+# This extends the global ~/.serena/serena_config.yml for this project
+
+# Dashboard settings
+web_dashboard: true
+web_dashboard_open_on_launch: false
+# Set to false since you'll keep it running - access at http://localhost:24282/dashboard/
+
+# Logging
+log_level: 20  # 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR
+trace_lsp_communication: false
+
+# Performance
+tool_timeout: 240  # seconds
+default_max_tool_answer_chars: 150000
+
+# Tool configuration
+excluded_tools: []
+included_optional_tools: []
+
+# Token counting (useful for monitoring API usage)
+record_tool_usage_stats: true
+token_count_estimator: anthropic-sonnet-3.5
+
+# Language server specific settings
+ls_specific_settings:
+  python:
+    # Customize Python language server behavior if needed
+    # Example: jedi_settings: {...}
+  typescript:
+    # Customize TypeScript language server behavior if needed
+
+# JetBrains IDE integration (if using PyCharm/WebStorm)
+jetbrains: false
+# Set to true if you install the Serena JetBrains plugin (when available)

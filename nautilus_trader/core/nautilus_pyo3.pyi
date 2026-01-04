@@ -1271,6 +1271,8 @@ class BarAggregation(Enum):
     DAY = "DAY"
     WEEK = "WEEK"
     MONTH = "MONTH"
+    YEAR = "YEAR"
+    RENKO = "RENKO"
 
 class BarIntervalType(Enum):
     LEFT_OPEN = "LEFT_OPEN"
@@ -1296,6 +1298,7 @@ class BookType(Enum):
     L3_MBO = "L3_MBO"
 
 class ContingencyType(Enum):
+    NO_CONTINGENCY = "NO_CONTINGENCY"
     OCO = "OCO"
     OTO = "OTO"
     OUO = "OUO"
@@ -3796,6 +3799,8 @@ class OrderStatusReport:
         client_order_id: ClientOrderId | None = None,
         order_list_id: OrderListId | None = None,
         venue_position_id: PositionId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
         contingency_type: ContingencyType | None = None,
         expire_time: int | None = None,
         price: Price | None = None,
@@ -3848,6 +3853,10 @@ class OrderStatusReport:
     @property
     def venue_position_id(self) -> PositionId | None: ...
     @property
+    def linked_order_ids(self) -> list[ClientOrderId] | None: ...
+    @property
+    def parent_order_id(self) -> ClientOrderId | None: ...
+    @property
     def contingency_type(self) -> ContingencyType: ...
     @property
     def expire_time(self) -> int | None: ...
@@ -3885,8 +3894,9 @@ class PositionStatusReport:
         quantity: Quantity,
         ts_last: int,
         ts_init: int,
-        venue_position_id: PositionId | None = None,
         report_id: UUID4 | None = None,
+        venue_position_id: PositionId | None = None,
+        avg_px_open: Decimal | None = None,
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> PositionStatusReport: ...
@@ -3903,6 +3913,8 @@ class PositionStatusReport:
     def quantity(self) -> Quantity: ...
     @property
     def signed_decimal_qty(self) -> Decimal: ...
+    @property
+    def avg_px_open(self) -> Decimal | None: ...
     @property
     def report_id(self) -> UUID4: ...
     @property
@@ -3989,6 +4001,7 @@ class OrderBook:
     def clear(self, sequence: int, ts_event: int) -> None: ...
     def clear_bids(self, sequence: int, ts_event: int) -> None: ...
     def clear_asks(self, sequence: int, ts_event: int) -> None: ...
+    def clear_stale_levels(self, side: OrderSide | None = None) -> list[BookLevel] | None: ...
     def apply_delta(self, delta: OrderBookDelta) -> None: ...
     def apply_deltas(self, deltas: OrderBookDeltas) -> None: ...
     def apply_depth(self, depth: OrderBookDepth10) -> None: ...
@@ -5613,6 +5626,136 @@ class BookImbalanceRatio:
 # Adapters
 ###################################################################################################
 
+# Bybit
+
+BYBIT_NAUTILUS_BROKER_ID: Final[str]
+
+class BybitAccountType(Enum):
+    Unified = "Unified"
+
+class BybitProductType(Enum):
+    Spot = "Spot"
+    Linear = "Linear"
+    Inverse = "Inverse"
+    Option = "Option"
+
+class BybitEnvironment(Enum):
+    Mainnet = "Mainnet"
+    Demo = "Demo"
+    Testnet = "Testnet"
+
+class BybitWebSocketError:
+    @property
+    def code(self) -> int: ...
+    @property
+    def message(self) -> str: ...
+    @property
+    def conn_id(self) -> str | None: ...
+    @property
+    def topic(self) -> str | None: ...
+    @property
+    def req_id(self) -> str | None: ...
+
+class BybitHttpClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+    ) -> None: ...
+    @staticmethod
+    def from_env() -> BybitHttpClient: ...
+    @property
+    def base_url(self) -> str: ...
+    @property
+    def api_key(self) -> str | None: ...
+
+class BybitWebSocketClient:
+    @staticmethod
+    def new_public(
+        product_type: BybitProductType,
+        environment: BybitEnvironment,
+        url: str | None = None,
+        heartbeat: int | None = None,
+    ) -> BybitWebSocketClient: ...
+    @staticmethod
+    def new_private(
+        environment: BybitEnvironment,
+        api_key: str,
+        api_secret: str,
+        url: str | None = None,
+        heartbeat: int | None = None,
+    ) -> BybitWebSocketClient: ...
+    @staticmethod
+    def new_trade(
+        environment: BybitEnvironment,
+        api_key: str,
+        api_secret: str,
+        url: str | None = None,
+        heartbeat: int | None = None,
+    ) -> BybitWebSocketClient: ...
+    def subscription_count(self) -> int: ...
+    async def is_active(self) -> bool: ...
+    async def connect(self, callback: Any) -> None: ...
+    async def close(self) -> None: ...
+    async def wait_until_active(self, timeout_secs: float) -> None: ...
+    async def subscribe(self, topics: list[str]) -> None: ...
+    async def unsubscribe(self, topics: list[str]) -> None: ...
+    async def subscribe_orderbook(self, symbol: str, depth: int) -> None: ...
+    async def unsubscribe_orderbook(self, symbol: str, depth: int) -> None: ...
+    async def subscribe_trades(self, symbol: str) -> None: ...
+    async def unsubscribe_trades(self, symbol: str) -> None: ...
+    async def subscribe_ticker(self, symbol: str) -> None: ...
+    async def unsubscribe_ticker(self, symbol: str) -> None: ...
+    async def subscribe_klines(self, symbol: str, interval: str) -> None: ...
+    async def unsubscribe_klines(self, symbol: str, interval: str) -> None: ...
+    async def subscribe_orders(self) -> None: ...
+    async def unsubscribe_orders(self) -> None: ...
+    async def subscribe_executions(self) -> None: ...
+    async def unsubscribe_executions(self) -> None: ...
+    async def subscribe_positions(self) -> None: ...
+    async def unsubscribe_positions(self) -> None: ...
+    async def subscribe_wallet(self) -> None: ...
+    async def unsubscribe_wallet(self) -> None: ...
+    async def submit_order(
+        self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce | None = None,
+        price: Price | None = None,
+        post_only: bool | None = None,
+        reduce_only: bool | None = None,
+    ) -> None: ...
+    async def modify_order(
+        self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId | None = None,
+        client_order_id: ClientOrderId | None = None,
+        quantity: Quantity | None = None,
+        price: Price | None = None,
+    ) -> None: ...
+    async def cancel_order(
+        self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId | None = None,
+        client_order_id: ClientOrderId | None = None,
+    ) -> None: ...
+
+def get_bybit_http_base_url(environment: BybitEnvironment) -> str: ...
+def get_bybit_ws_url_public(product_type: BybitProductType, environment: BybitEnvironment) -> str: ...
+def get_bybit_ws_url_private(environment: BybitEnvironment) -> str: ...
+def get_bybit_ws_url_trade(environment: BybitEnvironment) -> str: ...
+
 # Databento
 
 class DatabentoStatisticType(Enum):
@@ -5775,6 +5918,14 @@ class DatabentoHistoricalClient:
         limit: int | None = None,
         timestamp_on_close: bool | None = None,
     ) -> list[Bar]: ...
+    async def get_order_book_depth10(
+        self,
+        dataset: str,
+        instrument_ids: list[InstrumentId],
+        start: int,
+        end: int | None = None,
+        depth: int | None = None,
+    ) -> list[OrderBookDepth10]: ...
     async def get_range_imbalance(
         self,
         dataset: str,
@@ -5976,6 +6127,7 @@ class CoinbaseIntxHttpClient:
         expire_time: dt.datetime | None = None,
         price: Price | None = None,
         trigger_price: Price | None = None,
+        trigger_type: TriggerType | None = None,
         post_only: bool | None = None,
         reduce_only: bool | None = None,
     ) -> OrderStatusReport: ...
@@ -6121,6 +6273,22 @@ class OKXHttpClient:
         open_only: bool = False,
         limit: int | None = None,
     ) -> list[OrderStatusReport]: ...
+    async def request_algo_order_status_reports(
+        self,
+        account_id: AccountId,
+        instrument_type: OKXInstrumentType | None = None,
+        instrument_id: InstrumentId | None = None,
+        algo_id: str | None = None,
+        algo_client_order_id: ClientOrderId | None = None,
+        state: OKXOrderStatus | None = None,
+        limit: int | None = None,
+    ) -> list[OrderStatusReport]: ...
+    async def request_algo_order_status_report(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+    ) -> OrderStatusReport | None: ...
     async def request_fill_reports(
         self,
         account_id: AccountId,
@@ -6136,6 +6304,26 @@ class OKXHttpClient:
         instrument_type: OKXInstrumentType | None = None,
         instrument_id: InstrumentId | None = None,
     ) -> list[PositionStatusReport]: ...
+    async def place_algo_order(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        td_mode: OKXTradeMode,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        trigger_price: Price,
+        trigger_type: TriggerType | None = None,
+        limit_price: Price | None = None,
+        reduce_only: bool | None = None,
+    ) -> Any: ...
+    async def cancel_algo_order(
+        self,
+        instrument_id: InstrumentId,
+        algo_id: str,
+    ) -> Any: ...
 
 class OKXWebSocketClient:
     def __init__(
@@ -6199,6 +6387,8 @@ class OKXWebSocketClient:
     async def unsubscribe_funding_rates(self, instrument_id: InstrumentId) -> None: ...
     async def subscribe_orders(self, instrument_type: OKXInstrumentType) -> None: ...
     async def unsubscribe_orders(self, instrument_type: OKXInstrumentType) -> None: ...
+    async def subscribe_orders_algo(self, instrument_type: OKXInstrumentType) -> None: ...
+    async def unsubscribe_orders_algo(self, instrument_type: OKXInstrumentType) -> None: ...
     async def subscribe_fills(self, instrument_type: OKXInstrumentType) -> None: ...
     async def unsubscribe_fills(self, instrument_type: OKXInstrumentType) -> None: ...
     async def subscribe_account(self) -> None: ...
@@ -6305,6 +6495,30 @@ class OKXPositionMode(Enum):
     NET_MODE = "NET_MODE"
     LONG_SHORT_MODE = "LONG_SHORT_MODE"
 
+class OKXOrderStatus(Enum):
+    CANCELED = ...
+    LIVE = ...
+    EFFECTIVE = ...
+    PARTIALLY_FILLED = ...
+    FILLED = ...
+    MMP_CANCELED = ...
+    ORDER_PLACED = ...
+
+class OKXVipLevel(Enum):
+    VIP0 = "VIP0"
+    VIP1 = "VIP1"
+    VIP2 = "VIP2"
+    VIP3 = "VIP3"
+    VIP4 = "VIP4"
+    VIP5 = "VIP5"
+    VIP6 = "VIP6"
+    VIP7 = "VIP7"
+    VIP8 = "VIP8"
+    VIP9 = "VIP9"
+
+    @property
+    def value(self) -> int: ...  # type: ignore[override]
+
 # BitMEX
 
 class BitmexHttpClient:
@@ -6343,14 +6557,16 @@ class BitmexHttpClient:
     async def request_trades(
         self,
         instrument_id: InstrumentId,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
         limit: int | None = None,
     ) -> list[TradeTick]: ...
     async def request_bars(
         self,
         bar_type: BarType,
-        count: int | None = None,
         start: dt.datetime | None = None,
         end: dt.datetime | None = None,
+        limit: int | None = None,
         partial: bool = False,
     ) -> list[Bar]: ...
     async def request_account_state(
@@ -6385,9 +6601,12 @@ class BitmexHttpClient:
         time_in_force: TimeInForce,
         price: Price | None = None,
         trigger_price: Price | None = None,
+        trigger_type: TriggerType | None = None,
         display_qty: Quantity | None = None,
         post_only: bool = False,
         reduce_only: bool = False,
+        order_list_id: OrderListId | None = None,
+        contingency_type: ContingencyType | None = None,
     ) -> OrderStatusReport: ...
     async def cancel_order(
         self,
@@ -6415,14 +6634,6 @@ class BitmexHttpClient:
         price: Price | None = None,
         trigger_price: Price | None = None,
     ) -> OrderStatusReport: ...
-    async def submit_orders_bulk(
-        self,
-        orders: list[dict[str, Any]],
-    ) -> list[OrderStatusReport]: ...
-    async def modify_orders_bulk(
-        self,
-        orders: list[dict[str, Any]],
-    ) -> list[OrderStatusReport]: ...
 
 
 class BitmexWebSocketClient:
@@ -6704,7 +6915,7 @@ class YieldCurveData(Data):
 # Test Kit
 ###################################################################################################
 
-def ensure_file_exists_or_download_http(filepath: str, url: str, checksums: str | None = None) -> None: ...
+def ensure_file_exists_or_download_http(filepath: str, url: str, checksums: str | None = None, timeout_secs = 30) -> None: ...
 
 ###################################################################################################
 # Trading

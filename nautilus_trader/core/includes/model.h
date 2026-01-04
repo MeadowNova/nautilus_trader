@@ -168,6 +168,13 @@
 #define QUANTITY_MIN 0.0
 
 /**
+ * Minimum valid tick value for Uniswap V3 pools.
+ */
+#define Tick_MIN_TICK -887272
+
+
+
+/**
  * An account type provided by a trading venue or broker.
  */
 typedef enum AccountType {
@@ -3218,3 +3225,5 @@ void quantity_add_assign_u64(struct Quantity_t a, uint64_t b);
 void quantity_sub_assign(struct Quantity_t a, struct Quantity_t b);
 
 void quantity_sub_assign_u64(struct Quantity_t a, uint64_t b);
+
+struct Quantity_t quantity_saturating_sub(struct Quantity_t a, struct Quantity_t b);

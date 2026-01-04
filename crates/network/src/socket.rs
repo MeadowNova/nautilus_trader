@@ -17,16 +17,16 @@
 //! with exponential backoff and state management.
 
 //! **Key features**:
-//! - Connection state tracking (ACTIVE/RECONNECTING/DISCONNECTING/CLOSED)
-//! - Synchronized reconnection with backoff
-//! - Split read/write architecture
-//! - Python callback integration
+//! - Connection state tracking (ACTIVE/RECONNECTING/DISCONNECTING/CLOSED).
+//! - Synchronized reconnection with backoff.
+//! - Split read/write architecture.
+//! - Python callback integration.
 //!
 //! **Design**:
-//! - Single reader, multiple writer model
-//! - Read half runs in dedicated task
-//! - Write half runs in dedicated task connected with channel
-//! - Controller task manages lifecycle
+//! - Single reader, multiple writer model.
+//! - Read half runs in dedicated task.
+//! - Write half runs in dedicated task connected with channel.
+//! - Controller task manages lifecycle.
 
 use std::{
     fmt::Debug,
@@ -102,7 +102,7 @@ pub struct SocketConfig {
 
 impl Debug for SocketConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SocketConfig")
+        f.debug_struct(stringify!(SocketConfig))
             .field("url", &self.url)
             .field("mode", &self.mode)
             .field("suffix", &self.suffix)
@@ -206,7 +206,7 @@ impl SocketClientInner {
             certs_dir,
         } = &config.clone();
         let connector = if let Some(dir) = certs_dir {
-            let config = create_tls_config_from_certs_dir(Path::new(dir))?;
+            let config = create_tls_config_from_certs_dir(Path::new(dir), false)?;
             Some(Connector::Rustls(Arc::new(config)))
         } else {
             None
@@ -797,7 +797,7 @@ impl SocketClient {
 
             loop {
                 tokio::time::sleep(check_interval).await;
-                let mode = ConnectionMode::from_atomic(&connection_mode);
+                let mut mode = ConnectionMode::from_atomic(&connection_mode);
 
                 if mode.is_disconnect() {
                     tracing::debug!("Disconnecting");
@@ -834,7 +834,22 @@ impl SocketClient {
                     break; // Controller finished
                 }
 
-                if mode.is_reconnect() || (mode.is_active() && !inner.is_alive()) {
+                if mode.is_active() && !inner.is_alive() {
+                    if connection_mode
+                        .compare_exchange(
+                            ConnectionMode::Active.as_u8(),
+                            ConnectionMode::Reconnect.as_u8(),
+                            Ordering::SeqCst,
+                            Ordering::SeqCst,
+                        )
+                        .is_ok()
+                    {
+                        tracing::debug!("Detected dead read task, transitioning to RECONNECT");
+                    }
+                    mode = ConnectionMode::from_atomic(&connection_mode);
+                }
+
+                if mode.is_reconnect() {
                     match inner.reconnect().await {
                         Ok(()) => {
                             tracing::debug!("Reconnected successfully");
@@ -889,7 +904,7 @@ impl Drop for SocketClient {
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use nautilus_common::testing::wait_until_async;
-    use pyo3::prepare_freethreaded_python;
+    use pyo3::Python;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::{TcpListener, TcpStream},
@@ -943,7 +958,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_basic_send_receive() {
-        prepare_freethreaded_python();
+        Python::initialize();
 
         let (port, listener) = bind_test_server().await;
         let server_task = task::spawn(async move {
@@ -982,7 +997,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_reconnect_fail_exhausted() {
-        prepare_freethreaded_python();
+        Python::initialize();
 
         let (port, listener) = bind_test_server().await;
         drop(listener); // We drop it immediately -> no server is listening
@@ -1010,7 +1025,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_disconnect() {
-        prepare_freethreaded_python();
+        Python::initialize();
 
         let (port, listener) = bind_test_server().await;
         let server_task = task::spawn(async move {
@@ -1048,7 +1063,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_heartbeat() {
-        prepare_freethreaded_python();
+        Python::initialize();
 
         let (port, listener) = bind_test_server().await;
         let received = Arc::new(Mutex::new(Vec::new()));
@@ -1117,7 +1132,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_reconnect_success() {
-        prepare_freethreaded_python();
+        Python::initialize();
 
         let (port, listener) = bind_test_server().await;
 
@@ -1216,20 +1231,9 @@ mod rust_tests {
         };
 
         // Connect client (handler=None)
-        let client = {
-            #[cfg(feature = "python")]
-            {
-                SocketClient::connect(config.clone(), None, None, None)
-                    .await
-                    .unwrap()
-            }
-            #[cfg(not(feature = "python"))]
-            {
-                SocketClient::connect(config.clone(), None, None, None)
-                    .await
-                    .unwrap()
-            }
-        };
+        let client = SocketClient::connect(config.clone(), None, None, None)
+            .await
+            .unwrap();
 
         // Allow server to drop connection and client to notice
         sleep(Duration::from_millis(100)).await;
@@ -1237,6 +1241,53 @@ mod rust_tests {
         // Now close the client
         client.close().await;
         assert!(client.is_closed());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn test_reconnect_state_flips_when_reader_stops() {
+        // Bind an ephemeral port and accept a single connection which we immediately close.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            if let Ok((sock, _)) = listener.accept().await {
+                drop(sock);
+            }
+            // Give the client a moment to observe the closed connection.
+            sleep(Duration::from_millis(50)).await;
+        });
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            certs_dir: None,
+        };
+
+        let client = SocketClient::connect(config, None, None, None)
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if client.is_reconnecting() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("client did not enter RECONNECT state");
+
+        client.close().await;
         server.abort();
     }
 }

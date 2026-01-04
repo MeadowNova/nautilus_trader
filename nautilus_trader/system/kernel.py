@@ -306,7 +306,7 @@ class NautilusKernel:
                 instance_id=self._instance_id,
                 serializer=MsgSpecSerializer(
                     encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
-                    timestamps_as_str=True,  # Hard-coded for now
+                    timestamps_as_str=True,  # Hardcoded for now
                     timestamps_as_iso8601=config.cache.timestamps_as_iso8601,
                 ),
                 config=config.cache,
@@ -327,7 +327,7 @@ class NautilusKernel:
             encoding = config.message_bus.encoding.lower()
             self._msgbus_serializer = MsgSpecSerializer(
                 encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
-                timestamps_as_str=True,  # Hard-coded for now
+                timestamps_as_str=True,  # Hardcoded for now
                 timestamps_as_iso8601=config.message_bus.timestamps_as_iso8601,
             )
 
@@ -481,9 +481,6 @@ class NautilusKernel:
             loop=self._loop,
         )
 
-        if self._load_state:
-            self._trader.load()
-
         # Add controller
         self._controller: Controller | None = None
 
@@ -530,6 +527,9 @@ class NautilusKernel:
             strategy: Strategy = StrategyFactory.create(strategy_config)
             self._trader.add_strategy(strategy)
 
+        if self._load_state:
+            self._trader.load()
+
         # Create importable execution algorithms
         for exec_algorithm_config in config.exec_algorithms:
             exec_algorithm: ExecAlgorithm = ExecAlgorithmFactory.create(exec_algorithm_config)
@@ -539,7 +539,8 @@ class NautilusKernel:
         self._is_running = False
         self._is_stopping = False
 
-        build_time_ms = nanos_to_millis(time.time_ns() - ts_build)
+        build_time_ns = time.time_ns() - ts_build
+        build_time_ms = nanos_to_millis(build_time_ns) if build_time_ns > 0 else 0
         self._log.info(f"Initialized in {build_time_ms}ms")
 
     def __del__(self) -> None:

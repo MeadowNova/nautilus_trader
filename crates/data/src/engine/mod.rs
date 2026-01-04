@@ -61,7 +61,7 @@ use nautilus_common::{
         UnsubscribeCommand,
     },
     msgbus::{self, MStr, Topic, handler::ShareableMessageHandler, switchboard},
-    timer::TimeEventCallback,
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
     correctness::{
@@ -90,8 +90,8 @@ use ustr::Ustr;
 use crate::engine::pool::PoolUpdater;
 use crate::{
     aggregation::{
-        BarAggregator, TickBarAggregator, TimeBarAggregator, ValueBarAggregator,
-        VolumeBarAggregator,
+        BarAggregator, RenkoBarAggregator, TickBarAggregator, TimeBarAggregator,
+        ValueBarAggregator, VolumeBarAggregator,
     },
     client::DataClientAdapter,
 };
@@ -170,6 +170,12 @@ impl DataEngine {
     #[must_use]
     pub fn get_cache(&self) -> Ref<'_, Cache> {
         self.cache.borrow()
+    }
+
+    /// Returns the `Rc<RefCell<Cache>>` used by this engine.
+    #[must_use]
+    pub fn cache_rc(&self) -> Rc<RefCell<Cache>> {
+        Rc::clone(&self.cache)
     }
 
     /// Registers the `catalog` with the engine with an optional specific `name`.
@@ -493,6 +499,13 @@ impl DataEngine {
         self.collect_subscriptions(|client| &client.subscriptions_pool_liquidity_updates)
     }
 
+    #[cfg(feature = "defi")]
+    /// Returns all instrument IDs for which fee collect subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pool_fee_collects(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_pool_fee_collects)
+    }
+
     // -- COMMANDS --------------------------------------------------------------------------------
 
     /// Executes a `DataCommand` by delegating to subscribe, unsubscribe, or request handlers.
@@ -575,6 +588,9 @@ impl DataEngine {
             DefiSubscribeCommand::Pool(cmd) => self.setup_pool_updater(&cmd.instrument_id),
             DefiSubscribeCommand::PoolSwaps(cmd) => self.setup_pool_updater(&cmd.instrument_id),
             DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
+                self.setup_pool_updater(&cmd.instrument_id);
+            }
+            DefiSubscribeCommand::PoolFeeCollects(cmd) => {
                 self.setup_pool_updater(&cmd.instrument_id);
             }
             _ => {}
@@ -683,6 +699,7 @@ impl DataEngine {
                 RequestCommand::Instrument(req) => client.request_instrument(req),
                 RequestCommand::Instruments(req) => client.request_instruments(req),
                 RequestCommand::BookSnapshot(req) => client.request_book_snapshot(req),
+                RequestCommand::BookDepth(req) => client.request_book_depth(req),
                 RequestCommand::Quotes(req) => client.request_quotes(req),
                 RequestCommand::Trades(req) => client.request_trades(req),
                 RequestCommand::Bars(req) => client.request_bars(req),
@@ -745,23 +762,23 @@ impl DataEngine {
                 msgbus::publish(topic, &block as &dyn Any);
             }
             DefiData::Pool(pool) => {
-                if let Err(err) = self.cache.borrow_mut().add_pool(pool.clone()) {
-                    log::error!("Failed to add Pool to cache: {err}");
+                if let Err(e) = self.cache.borrow_mut().add_pool(pool.clone()) {
+                    log::error!("Failed to add Pool to cache: {e}");
                 }
 
                 let topic = switchboard::get_defi_pool_topic(pool.instrument_id);
                 msgbus::publish(topic, &pool as &dyn Any);
             }
             DefiData::PoolSwap(swap) => {
-                let topic = switchboard::get_defi_pool_swaps_topic(swap.instrument_id);
+                let topic = switchboard::get_defi_pool_swaps_topic(swap.instrument_id());
                 msgbus::publish(topic, &swap as &dyn Any);
             }
             DefiData::PoolLiquidityUpdate(update) => {
-                let topic = switchboard::get_defi_liquidity_topic(update.instrument_id);
+                let topic = switchboard::get_defi_liquidity_topic(update.instrument_id());
                 msgbus::publish(topic, &update as &dyn Any);
             }
             DefiData::PoolFeeCollect(collect) => {
-                let topic = switchboard::get_defi_collect_topic(collect.instrument_id);
+                let topic = switchboard::get_defi_collect_topic(collect.instrument_id());
                 msgbus::publish(topic, &collect as &dyn Any);
             }
         }
@@ -807,6 +824,10 @@ impl DataEngine {
         let deltas = if self.config.buffer_deltas {
             if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&delta.instrument_id) {
                 buffered_deltas.deltas.push(delta);
+                buffered_deltas.flags = delta.flags;
+                buffered_deltas.sequence = delta.sequence;
+                buffered_deltas.ts_event = delta.ts_event;
+                buffered_deltas.ts_init = delta.ts_init;
             } else {
                 let buffered_deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
                 self.buffered_deltas_map
@@ -843,6 +864,13 @@ impl DataEngine {
 
             if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&instrument_id) {
                 buffered_deltas.deltas.extend(deltas.deltas);
+
+                if let Some(last_delta) = buffered_deltas.deltas.last() {
+                    buffered_deltas.flags = last_delta.flags;
+                    buffered_deltas.sequence = last_delta.sequence;
+                    buffered_deltas.ts_event = last_delta.ts_event;
+                    buffered_deltas.ts_init = last_delta.ts_init;
+                }
             } else {
                 self.buffered_deltas_map.insert(instrument_id, deltas);
             }
@@ -968,7 +996,7 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
-        self.setup_order_book(&cmd.instrument_id, cmd.book_type, true, cmd.managed)?;
+        self.setup_book_updater(&cmd.instrument_id, cmd.book_type, true, cmd.managed)?;
 
         Ok(())
     }
@@ -978,7 +1006,7 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth10` data");
         }
 
-        self.setup_order_book(&cmd.instrument_id, cmd.book_type, false, cmd.managed)?;
+        self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, cmd.managed)?;
 
         Ok(())
     }
@@ -1029,8 +1057,9 @@ impl DataEngine {
                 .insert(cmd.instrument_id, snapshotter.clone());
             let timer_name = snapshotter.timer_name;
 
-            let callback =
-                TimeEventCallback::Rust(Rc::new(move |event| snapshotter.snapshot(event)));
+            let callback_fn: Rc<dyn Fn(TimeEvent)> =
+                Rc::new(move |event| snapshotter.snapshot(event));
+            let callback = TimeEventCallback::from(callback_fn);
 
             self.clock
                 .borrow_mut()
@@ -1046,7 +1075,7 @@ impl DataEngine {
                 .expect(FAILED);
         }
 
-        self.setup_order_book(&cmd.instrument_id, cmd.book_type, false, true)?;
+        self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, true)?;
 
         Ok(())
     }
@@ -1187,7 +1216,7 @@ impl DataEngine {
                 let timer_name = snapshotter.timer_name;
                 self.book_snapshotters.remove(instrument_id);
                 let mut clock = self.clock.borrow_mut();
-                if clock.timer_names().contains(&timer_name.as_str()) {
+                if clock.timer_exists(&timer_name) {
                     clock.cancel_timer(&timer_name);
                 }
                 log::debug!("Removed BookSnapshotter for instrument ID {instrument_id}");
@@ -1235,7 +1264,7 @@ impl DataEngine {
     // -- INTERNAL --------------------------------------------------------------------------------
 
     #[allow(clippy::too_many_arguments)]
-    fn setup_order_book(
+    fn setup_book_updater(
         &mut self,
         instrument_id: &InstrumentId,
         book_type: BookType,
@@ -1277,7 +1306,7 @@ impl DataEngine {
         let updater = Rc::new(PoolUpdater::new(instrument_id, self.cache.clone()));
         let handler = ShareableMessageHandler(updater.clone());
 
-        // Subscribe to pool swaps and liquidity updates
+        // Subscribe to pool swaps, liquidity updates, and fee collects
         let swap_topic = switchboard::get_defi_pool_swaps_topic(*instrument_id);
         if !msgbus::is_subscribed(swap_topic.as_str(), handler.clone()) {
             msgbus::subscribe(
@@ -1289,7 +1318,16 @@ impl DataEngine {
 
         let liquidity_topic = switchboard::get_defi_liquidity_topic(*instrument_id);
         if !msgbus::is_subscribed(liquidity_topic.as_str(), handler.clone()) {
-            msgbus::subscribe(liquidity_topic.into(), handler, Some(self.msgbus_priority));
+            msgbus::subscribe(
+                liquidity_topic.into(),
+                handler.clone(),
+                Some(self.msgbus_priority),
+            );
+        }
+
+        let collect_topic = switchboard::get_defi_collect_topic(*instrument_id);
+        if !msgbus::is_subscribed(collect_topic.as_str(), handler.clone()) {
+            msgbus::subscribe(collect_topic.into(), handler, Some(self.msgbus_priority));
         }
 
         self.pool_updaters.insert(*instrument_id, updater);
@@ -1362,8 +1400,16 @@ impl DataEngine {
                     handler,
                     false,
                 )) as Box<dyn BarAggregator>,
+                BarAggregation::Renko => Box::new(RenkoBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    instrument.price_increment(),
+                    handler,
+                    false,
+                )) as Box<dyn BarAggregator>,
                 _ => panic!(
-                    "Cannot create aggregator: {} aggregation not currently supported",
+                    "BarAggregation {:?} is not currently implemented. Supported aggregations: MILLISECOND, SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, YEAR, TICK, VOLUME, VALUE, RENKO",
                     bar_type.spec().aggregation
                 ),
             }

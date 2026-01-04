@@ -1,8 +1,109 @@
+# NautilusTrader 1.221.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+- Added support for `OrderBookDepth10` requests (#2955), thanks @faysou
+- Added support for quotes from book depths (#2977), thanks @faysou
+- Added Renko bar aggregator (#2941), thanks @faysou
+- Added `time_range_generator` for on the fly data data subscriptions (#2952), thanks @faysou
+- Added `__repr__` to `NewsEvent` (#2958), thanks @MK27MK
+- Added `convert_quote_qty_to_base` config option to `ExecEngineConfig` (default `True` to retain current behavior) allows adapters to keep quote-denominated sizes when needed
+- Added contingent order fields `parent_order_id` and `linked_order_ids` for `OrderStatusReport` and reconciliation
+- Added Binance BBO `price_match` parameter support for order submission
+- Added BitMEX conditional orders support
+- Added BitMEX batch cancel support
+- Added BitMEX contingent orders support (OCO, OTO, brackets)
+- Added BitMEX historical data requests (trades and bars)
+- Added Bybit SPOT position reports with opt-in `use_spot_position_reports` config option for `BybitExecClientConfig`
+- Added Bybit `ignore_uncached_instrument_executions` config option for `BybitExecClientConfig` (default `False` to retain current behavior)
+- Added Databento CME sandbox example
+- Added Interactive Brokers cache config support for historical provider (#2942), thanks @ms32035
+- Added Interactive Brokers support for fetching orders from all clients (#2948), thanks @dinana
+- Added Interactive Brokers order conditions (#2988), thanks @faysou
+- Added Interactive Brokers `generate_fill_reports` implementation (#2989), thanks @faysou
+- Added OKX conditional trigger orders support
+- Added OKX trade mode per order via `params` using `td_mode` key
+- Added Polymarket native market orders support
+
+### Breaking Changes
+- Polymarket execution client no longer accepts market BUY orders unless `quote_quantity=True`
+
+### Internal Improvements
+- Added BitMEX adapter integration tests
+- Added OKX adapter integration tests
+- Introduced AMM Pool profiler with tickmaps and Uniswapv3 support (#3000, #3010), thanks @filipmacek
+- Implemented BitMEX robust ping/pong handling
+- Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
+- Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
+- Implemented Hyperliquid weighted rate limiter for REST API (#2960), thanks @nicolad
+- Implemented Hyperliquid L2 order book with tick-based pricing (#2967), thanks @nicolad
+- Implemented Hyperliquid data client and fix dependencies (#2975), thanks @nicolad
+- Implemented Hyperliquid REST API models for execution (#2983), thanks @nicolad
+- Implemented Hyperliquid `InstrumentProvider` / definitions parsing (#2992), thanks @nicolad
+- Implemented Hyperliquid DataClient in Python (#2996), thanks @nicolad
+- Implemented Hyperliquid DataClient in Rust (#2999), thanks @nicolad
+- Implemented Hyperliquid ExecutionClient in Python (#3003), thanks @nicolad
+- Standardized Binance order validations with proper order denied events to avoid "hanging" orders
+- Improved clock and timer thread safety and validations
+- Improved live timer lifecycle management by canceling existing timers with the same name
+- Improved socket reconnect sequence and tighten client setup and testing
+- Improved Hyperliquid adapter patterns (#2972), thanks @nicolad
+- Improved BitMEX spot instruments quantity handling by scaling to correct fractional units
+- Improved Binance, Bybit, OKX, BitMEX, and Coinbase International HTTP rate limiting to enforce documented per-endpoint quotas
+- Refined Renko bar aggregator and add tests (#2961), thanks @faysou
+- Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
+- Refined Interactive Brokers execution flows (#2993), thanks @faysou
+- Optimized rate limiter quota keys with string interning to avoid repeated allocations
+- Upgraded Rust (MSRV) to 1.90.0
+- Upgraded Cython to v3.1.4
+- Upgraded `databento` crate to v0.34.1
+- Upgraded `datafusion` crate to v0.50.0
+- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
+
+### Fixes
+- Fixed reduce-only order panic when quantity exceeds position
+- Fixed position purge logic to prevent purging re-opened position
+- Fixed `RiskEngine` reduce-only cash exits (#2986), thanks for reporting @dennisnissle
+- Fixed overflow in `NautilusKernel` build time calculation due to negative duration (#2998), thanks for reporting @HaakonFlaaronning
+- Fixed Databento CMBP-1/CBBO/TBBO symbology resolution
+- Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
+- Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
+- Fixed `SandboxExecutionClient` instrument data handling
+- Fixed `AccountState` Arrow serialization (#3005), thanks for reporting @nikzasel
+- Fixed Binance duplicate `OrderSubmitted` event generation for order lists (#2994), thanks @sunlei
+- Fixed Binance websocket fill message parsing for Binance US with extra fields (#3006), thanks for reporting @bmlquant
+- Fixed Bybit currency parsing from venue resulting in incorrectly low precision (e.g., USDT precision 4 rather than 8)
+- Fixed Bybit handling of `OrderModifyRejected` events from pending updates
+- Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
+- Fixed Polymarket websocket message handling (#2963, #2968), thanks @thefabus
+- Fixed Polymarket tick size change handling for quotes (#2980), thanks for reporting @santivazq
+- Fixed Polymarket market order submission to use native CLOB market orders (#2984)
+- Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
+- Fixed Interactive Brokers instrument provider `TypeError` when load_ids/contracts are `None`, thanks for reporting @FGU1
+- Fixed Interactive Brokers modify bracket order (#2979), thanks @faysou
+- Fixed Interactive Brokers historical bars resubscription failure after connection loss (#3002), thanks @Johnkhk
+- Fixed safe encoded symbols (#2964), thanks @ms32035
+- Fixed nautilus CLI macOS compatibility with regex unicode-perl feature (#2969)
+
+### Documentation Updates
+- Added quick-reference rate limit tables with links to official docs for Binance, Bybit, OKX, BitMEX, and Coinbase International
+- Improved dark and light themes for readability
+- Improved clarity of implemented bar aggregations
+- Standardized consistent styling per docs style guide
+- Fixed some broken links
+
+### Deprecations
+- Deprecated `convert_quote_qty_to_base`; disable (`False`) to maintain consistent behaviour going forwards. Automatic conversion will be removed in a future version.
+
+---
+
 # NautilusTrader 1.220.0 Beta
 
 Released on 9th September 2025 (UTC).
 
 ### Enhancements
+- Added initial BitMEX integration adapter
 - Added `FundingRateUpdate` data type with caching support through data engine
 - Added `subscribe_funding_rates(...)` and `unsubscribe_funding_rates(...)` methods for actors
 - Added `on_funding_rate(...)` handler for actors
@@ -49,7 +150,6 @@ Released on 9th September 2025 (UTC).
 - Added a complete `.env.example` template to guide environment configuration (#2877), thanks @nicolad
 - Added Interactive Brokers OCA setting to order groups (#2899), thanks @faysou
 - Added Interactive Brokers subscriptions for position updates (#2887), thanks @faysou
-- Added support for running separate live and paper IB Gateway containers without port conflicts. Simplified container naming and made VNC optional.
 - Added `avg_px_open` field to `PositionStatusReport` for IB adapter (#2925), thanks @dinana
 - Added support for running separate live and paper IB Gateway containers simultaneously (#2937), thanks @Bshara23
 - Added support for data deduplication on catalog consolidation (#2934), thanks @ms32035
@@ -849,7 +949,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Fixed memory allocation performance issue for `TardisCSVDataLoader`
 - Fixed `effective` timestamp filtering for `TardisHttpClient` to now only retain latest version at or before `effective`
 - Fixed contract `activation` for Binance Futures, now based on the `onboardDate` field
-- Fixed hard-coded signature type for `PolymarketExecutionClient`
+- Fixed hardcoded signature type for `PolymarketExecutionClient`
 - Fixed unsubscribing from quotes for dYdX (#2331), thanks @davidsblom
 - Fixed docstrings for dYdX factories (#2415), thanks @davidsblom
 - Fixed incorrect type annotations in `_request_instrument` signature (#2332), thanks @faysou
@@ -2380,7 +2480,7 @@ Released on 31st July 2023 (UTC).
 - Fixed Binance reconciliation which was requesting reports for the same symbol multiple times
 - Fixed Binance Futures native symbol parsing (was actually Nautilus symbol values)
 - Fixed Binance Futures `PositionStatusReport` parsing of position side
-- Fixed Binance Futures `TradeReport` assignment of position ID (was hard-coded to hedging mode)
+- Fixed Binance Futures `TradeReport` assignment of position ID (was hardcoded to hedging mode)
 - Fixed Binance execution submitting of order lists
 - Fixed Binance commission rates requests for `InstrumentProvider`
 - Fixed Binance `TriggerType` parsing #1154, thanks for reporting @davidblom603

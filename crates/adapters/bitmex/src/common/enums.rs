@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! BitMEX-specific enumerations shared by HTTP and WebSocket components.
+
 use nautilus_model::enums::{
     ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
 };
@@ -394,6 +396,24 @@ impl From<BitmexContingencyType> for ContingencyType {
     }
 }
 
+impl TryFrom<ContingencyType> for BitmexContingencyType {
+    type Error = BitmexError;
+
+    fn try_from(value: ContingencyType) -> Result<Self, Self::Error> {
+        match value {
+            ContingencyType::NoContingency => Ok(Self::Unknown),
+            ContingencyType::Oco => Ok(Self::OneCancelsTheOther),
+            ContingencyType::Oto => Ok(Self::OneTriggersTheOther),
+            ContingencyType::Ouo => Err(BitmexError::NonRetryable {
+                source: BitmexNonRetryableError::Validation {
+                    field: "contingency_type".to_string(),
+                    message: "OUO contingency type not supported by BitMEX".to_string(),
+                },
+            }),
+        }
+    }
+}
+
 /// Represents the available peg price types on BitMEX.
 #[derive(
     Copy,
@@ -450,6 +470,7 @@ pub enum BitmexExecInstruction {
 }
 
 impl BitmexExecInstruction {
+    /// Joins execution instructions into the comma-separated string expected by BitMEX.
     pub fn join(instructions: &[Self]) -> String {
         instructions
             .iter()
@@ -506,6 +527,8 @@ pub enum BitmexExecType {
     Bankruptcy,
     /// Trial fill (testnet only).
     TrialFill,
+    /// Stop/trigger order activated by system.
+    TriggeredOrActivatedBySystem,
 }
 
 /// Indicates whether the execution was maker or taker.
@@ -776,6 +799,38 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<BitmexSide>(r#""sell""#).unwrap(),
             BitmexSide::Sell
+        );
+    }
+
+    #[rstest]
+    fn test_bitmex_order_type_deserialization() {
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""Market""#).unwrap(),
+            BitmexOrderType::Market
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""Limit""#).unwrap(),
+            BitmexOrderType::Limit
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""Stop""#).unwrap(),
+            BitmexOrderType::Stop
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""StopLimit""#).unwrap(),
+            BitmexOrderType::StopLimit
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""MarketIfTouched""#).unwrap(),
+            BitmexOrderType::MarketIfTouched
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""LimitIfTouched""#).unwrap(),
+            BitmexOrderType::LimitIfTouched
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexOrderType>(r#""Pegged""#).unwrap(),
+            BitmexOrderType::Pegged
         );
     }
 

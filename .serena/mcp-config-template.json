@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "description": "Serena MCP Configuration Template - Replace placeholders with your paths",
+  "mcpServers": {
+    "serena": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "{{SERENA_INSTALLATION_PATH}}",
+        "serena",
+        "start-mcp-server",
+        "--context",
+        "ide-assistant"
+      ],
+      "env": {
+        "SERENA_PROJECT": "{{PROJECT_ROOT_PATH}}",
+        "SERENA_AUTO_ACTIVATE": "true",
+        "SERENA_LOG_LEVEL": "20",
+        "SERENA_WEB_DASHBOARD": "true",
+        "SERENA_WEB_DASHBOARD_OPEN": "false"
+      },
+      "metadata": {
+        "name": "Serena Code Agent",
+        "description": "Intelligent code navigation and semantic analysis for {{PROJECT_NAME}}",
+        "version": "0.1.4",
+        "homepage": "https://github.com/serena/serena"
+      }
+    }
+  },
+  "globalShortcuts": {
+    "serena.findSymbol": "Ctrl+Shift+S",
+    "serena.getOverview": "Ctrl+Shift+O",
+    "serena.findReferences": "Ctrl+Shift+R"
+  },
+  "mcpSettings": {
+    "timeout": 240000,
+    "autoReconnect": true,
+    "maxRetries": 3,
+    "logLevel": "info"
+  },
+  "_instructions": {
+    "step1": "Copy this file and rename it (remove -template)",
+    "step2": "Replace {{SERENA_INSTALLATION_PATH}} with path to Serena installation (e.g., /home/user/Serena/serena)",
+    "step3": "Replace {{PROJECT_ROOT_PATH}} with absolute path to your project root",
+    "step4": "Replace {{PROJECT_NAME}} with your project name",
+    "step5": "For Claude Desktop: Copy to ~/.config/claude-desktop/config.json",
+    "step6": "For VS Code: Copy to .vscode/mcp-settings.json",
+    "step7": "For Cursor: Copy to .cursor/mcp-config.json"
+  },
+  "_examples": {
+    "SERENA_INSTALLATION_PATH": "/home/ajk/Serena/serena",
+    "PROJECT_ROOT_PATH": "/home/ajk/MyProject",
+    "PROJECT_NAME": "MyProject"
+  }
+}

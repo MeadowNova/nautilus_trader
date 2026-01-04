@@ -1,0 +1,478 @@
+---
+# Prometheus Alert Rules for Multi-Factor Strategy Risk Management
+# Deploy to Prometheus: /etc/prometheus/rules/ or configured rules directory
+# Reload: curl -X POST http://localhost:9090/-/reload
+
+groups:
+  - name: multi_factor_strategy_risk_management
+    interval: 30s
+    rules:
+
+      # ========================================================================
+      # DAILY LOSS ALERTS
+      # ========================================================================
+
+      - alert: StrategyDailyLossWarning
+        expr: nautilus_daily_loss_pct > 0.02
+        for: 5m
+        labels:
+          severity: warning
+          component: circuit_breaker
+          strategy: multi_factor
+        annotations:
+          summary: "Daily loss warning threshold exceeded"
+          description: |
+            Strategy daily loss has exceeded 2% warning threshold.
+            Current daily loss: {{ $value | humanizePercentage }}
+            Portfolio: {{ $labels.portfolio }}
+            Action: Monitor closely, prepare to reduce position sizes
+          runbook: "https://wiki.internal/runbooks/daily_loss_warning.md"
+
+      - alert: StrategyDailyLossCritical
+        expr: nautilus_daily_loss_pct > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          component: circuit_breaker
+          strategy: multi_factor
+        annotations:
+          summary: "CRITICAL: Daily loss limit exceeded - HALT TRADING"
+          description: |
+            Strategy daily loss has EXCEEDED 5% hard limit.
+            Current daily loss: {{ $value | humanizePercentage }}
+            Portfolio: {{ $labels.portfolio }}
+            Action: IMMEDIATE - Stop all new trades, monitor open positions for closure
+          runbook: "https://wiki.internal/runbooks/daily_loss_critical.md"
+
+      # ========================================================================
+      # DRAWDOWN ALERTS
+      # ========================================================================
+
+      - alert: StrategyDrawdownWarning
+        expr: nautilus_drawdown_pct > 0.10
+        for: 5m
+        labels:
+          severity: warning
+          component: circuit_breaker
+          strategy: multi_factor
+        annotations:
+          summary: "Portfolio drawdown exceeds 10% warning threshold"
+          description: |
+            Portfolio drawdown has exceeded 10% warning level.
+            Current drawdown: {{ $value | humanizePercentage }}
+            Peak value: {{ $labels.peak_value | humanize }}
+            Current value: {{ $labels.current_value | humanize }}
+            Action: Reduce position sizes by 20-30%, avoid leverage
+
+      - alert: StrategyDrawdownCritical
+        expr: nautilus_drawdown_pct > 0.20
+        for: 2m
+        labels:
+          severity: critical
+          component: circuit_breaker
+          strategy: multi_factor
+        annotations:
+          summary: "CRITICAL: Portfolio drawdown > 20% - CIRCUIT BREAKER ACTIVE"
+          description: |
+            Portfolio drawdown has EXCEEDED 20% circuit breaker threshold.
+            Current drawdown: {{ $value | humanizePercentage }}
+            Peak value: {{ $labels.peak_value | humanize }}
+            Current value: {{ $labels.current_value | humanize }}
+            Action: IMMEDIATE - Activate circuit breaker, halt new trades, liquidate if necessary
+
+      # ========================================================================
+      # WIN RATE ALERTS (Rolling 20 Trades)
+      # ========================================================================
+
+      - alert: StrategyLowWinRate
+        expr: nautilus_win_rate_20trades < 0.35
+        for: 10m
+        labels:
+          severity: warning
+          component: performance
+          strategy: multi_factor
+        annotations:
+          summary: "Win rate below 35% on rolling 20-trade window"
+          description: |
+            Strategy win rate has fallen below 35% threshold.
+            Current win rate: {{ $value | humanizePercentage }}
+            Trades evaluated: 20
+            Action: Review strategy signals, check for regime change, consider reducing leverage
+
+      - alert: StrategyNegativeWinRate
+        expr: nautilus_win_rate_20trades < 0.30
+        for: 15m
+        labels:
+          severity: critical
+          component: performance
+          strategy: multi_factor
+        annotations:
+          summary: "CRITICAL: Win rate below 30% - strategy not profitable"
+          description: |
+            Strategy win rate critically low at {{ $value | humanizePercentage }}.
+            Last 20 trades: Losing streak detected.
+            Action: HALT trading immediately, conduct full strategy review, backtest analysis required
+
+      # ========================================================================
+      # POSITION CONCENTRATION ALERTS
+      # ========================================================================
+
+      - alert: PositionConcentrationWarning
+        expr: nautilus_max_position_pct > 0.075
+        for: 5m
+        labels:
+          severity: warning
+          component: position_limits
+          strategy: multi_factor
+        annotations:
+          summary: "Single position exceeds 7.5% portfolio concentration"
+          description: |
+            Position concentration warning triggered.
+            Max position: {{ $value | humanizePercentage }} of portfolio
+            Limit: 5% (warning at 7.5%)
+            Position: {{ $labels.symbol }}
+            Action: Reduce position size, diversify, or hedge concentration risk
+
+      - alert: PositionConcentrationCritical
+        expr: nautilus_max_position_pct > 0.10
+        for: 2m
+        labels:
+          severity: critical
+          component: position_limits
+          strategy: multi_factor
+        annotations:
+          summary: "CRITICAL: Single position > 10% - excessive concentration"
+          description: |
+            Position concentration CRITICAL.
+            Max position: {{ $value | humanizePercentage }} of portfolio
+            Position: {{ $labels.symbol }}
+            Action: Reduce immediately to below 5% target
+
+      # ========================================================================
+      # CORRELATION & DIVERSIFICATION ALERTS
+      # ========================================================================
+
+      - alert: HighPositionCorrelation
+        expr: nautilus_max_correlation_pair > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          component: diversification
+          strategy: multi_factor
+        annotations:
+          summary: "High correlation detected between positions"
+          description: |
+            Position pair correlation exceeds diversification threshold.
+            Correlation: {{ $value | humanize }}
+            Pair: {{ $labels.symbol1 }} / {{ $labels.symbol2 }}
+            Action: Reduce position sizes, add diversifying hedge, reconsider strategy
+
+      - alert: MultipleHighCorrelations
+        expr: count(nautilus_correlation_pair > 0.80) > 3
+        for: 15m
+        labels:
+          severity: critical
+          component: diversification
+          strategy: multi_factor
+        annotations:
+          summary: "CRITICAL: Multiple high-correlation positions - portfolio concentration"
+          description: |
+            Multiple position pairs show high correlation (>0.80).
+            Count: {{ $value }} correlated pairs
+            This indicates insufficient diversification and high concentration risk.
+            Action: Rebalance portfolio immediately, reduce overlapping exposures
+
+      # ========================================================================
+      # LEVERAGE ALERTS
+      # ========================================================================
+
+      - alert: HighLeverageWarning
+        expr: nautilus_leverage_ratio > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          component: position_limits
+          strategy: multi_factor
+        annotations:
+          summary: "Portfolio leverage exceeds 2.0x"
+          description: |
+            Portfolio leverage warning threshold exceeded.
+            Current leverage: {{ $value }}x
+            Limit: 3.0x (warning at 2.0x)
+            Action: Reduce position sizes, pay down margin
+
+      - alert: ExcessiveLeverageAlert
+        expr: nautilus_leverage_ratio > 2.5
+        for: 2m
+        labels:
+          severity: critical
+          component: position_limits
+          strategy: multi_factor
+        annotations:
+          summary: "CRITICAL: Leverage > 2.5x - reduce immediately"
+          description: |
+            Portfolio leverage critically high.
+            Current leverage: {{ $value }}x
+            Max limit: 3.0x
+            Action: IMMEDIATE liquidation of non-core positions required
+
+      # ========================================================================
+      # TRADE EXPECTANCY ALERTS
+      # ========================================================================
+
+      - alert: NegativeTradeExpectancy
+        expr: nautilus_trade_expectancy < 0
+        for: 15m
+        labels:
+          severity: warning
+          component: performance
+          strategy: multi_factor
+        annotations:
+          summary: "Trade expectancy is negative - strategy not in profit"
+          description: |
+            Strategy expectancy calculation shows negative return.
+            Current expectancy: {{ $value | humanize }}R
+            Calculation: (Win% × Avg_Win) - (Loss% × Avg_Loss)
+            Action: Review trade sizing, signal quality, and risk management rules
+
+      - alert: LowExpectancy
+        expr: nautilus_trade_expectancy < 0.5
+        for: 20m
+        labels:
+          severity: warning
+          component: performance
+          strategy: multi_factor
+        annotations:
+          summary: "Trade expectancy below 0.5R - marginal profitability"
+          description: |
+            Strategy expectancy is below target minimum.
+            Current expectancy: {{ $value | humanize }}R
+            Target minimum: 0.5R
+            Action: Increase signal conviction threshold, tighten stops, improve signal quality
+
+      # ========================================================================
+      # PORTFOLIO HEAT ALERTS
+      # ========================================================================
+
+      - alert: HighPortfolioHeatUsage
+        expr: nautilus_heat_used_pct > 0.75
+        for: 5m
+        labels:
+          severity: warning
+          component: position_limits
+          strategy: multi_factor
+        annotations:
+          summary: "Portfolio heat usage exceeds 75%"
+          description: |
+            Risk capital (heat) usage is at elevated levels.
+            Heat used: {{ $value | humanizePercentage }}
+            Limit: 100% (warning at 75%)
+            Action: Reduce position sizes, limit new trades, reduce risk per trade
+
+      - alert: ExhaustedPortfolioHeat
+        expr: nautilus_heat_used_pct > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          component: position_limits
+          strategy: multi_factor
+        annotations:
+          summary: "CRITICAL: Portfolio heat nearly exhausted"
+          description: |
+            Risk capital usage at critical level.
+            Heat used: {{ $value | humanizePercentage }}
+            Remaining capacity: < 5% of budget
+            Action: STOP new trades immediately, focus on position management
+
+      # ========================================================================
+      # VOLATILITY ALERTS
+      # ========================================================================
+
+      - alert: ElevatedPortfolioVolatility
+        expr: nautilus_portfolio_volatility > 0.25
+        for: 10m
+        labels:
+          severity: warning
+          component: market_conditions
+          strategy: multi_factor
+        annotations:
+          summary: "Portfolio volatility elevated above 25% annualized"
+          description: |
+            Portfolio volatility (annualized) exceeds normal operating range.
+            Current volatility: {{ $value | humanizePercentage }}
+            Normal range: 15-20%
+            Action: Reduce position sizes, consider volatility hedge (VIX calls)
+
+      - alert: CrisisVolatility
+        expr: nautilus_portfolio_volatility > 0.50
+        for: 5m
+        labels:
+          severity: critical
+          component: market_conditions
+          strategy: multi_factor
+        annotations:
+          summary: "CRISIS: Portfolio volatility > 50%"
+          description: |
+            Extreme volatility detected in portfolio.
+            Current volatility: {{ $value | humanizePercentage }}
+            This indicates market stress or extreme position risk.
+            Action: Reduce leverage immediately, liquidate non-core positions
+
+      # ========================================================================
+      # VALUE AT RISK (VaR) ALERTS
+      # ========================================================================
+
+      - alert: ElevatedValueAtRisk
+        expr: nautilus_var_95_pct > 0.04
+        for: 10m
+        labels:
+          severity: warning
+          component: risk_metrics
+          strategy: multi_factor
+        annotations:
+          summary: "95% Value at Risk exceeds 4% threshold"
+          description: |
+            Downside risk (95% confidence) is elevated.
+            VaR 95%: {{ $value | humanizePercentage }}
+            Interpretation: 5% probability of loss exceeding {{ $value | humanizePercentage }}
+            Action: Reduce position sizes, add downside hedges, review correlations
+
+      - alert: HighValueAtRisk
+        expr: nautilus_var_95_pct > 0.07
+        for: 5m
+        labels:
+          severity: critical
+          component: risk_metrics
+          strategy: multi_factor
+        annotations:
+          summary: "CRITICAL: VaR 95% > 7% - tail risk unacceptable"
+          description: |
+            Tail risk (worst 5% scenarios) is excessive.
+            VaR 95%: {{ $value | humanizePercentage }}
+            Action: De-risk portfolio immediately, buy tail hedges (OTM puts)
+
+      # ========================================================================
+      # CIRCUIT BREAKER TRIGGERED ALERTS
+      # ========================================================================
+
+      - alert: CircuitBreakerActive
+        expr: nautilus_circuit_breaker_active > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: circuit_breaker
+          strategy: multi_factor
+        annotations:
+          summary: "CRITICAL: Circuit breaker ACTIVATED - trading halted"
+          description: |
+            Circuit breaker has been triggered due to exceeding loss or drawdown limits.
+            Status: ACTIVE
+            Action: Review trigger reason, assess portfolio health, consider orderly liquidation
+
+      # ========================================================================
+      # GREEK & DERIVATIVES ALERTS (Options Strategy)
+      # ========================================================================
+
+      - alert: HighDeltaExposure
+        expr: abs(nautilus_portfolio_delta) > 0.7
+        for: 5m
+        labels:
+          severity: warning
+          component: greeks
+          strategy: multi_factor
+        annotations:
+          summary: "Portfolio delta exposure exceeds 70%"
+          description: |
+            Portfolio directional exposure is elevated.
+            Delta: {{ $value | humanize }}
+            Target: 0.0 (market neutral)
+            Action: Rebalance with options or short positions
+
+      - alert: HighGammaRisk
+        expr: nautilus_portfolio_gamma > 0.005
+        for: 10m
+        labels:
+          severity: warning
+          component: greeks
+          strategy: multi_factor
+        annotations:
+          summary: "Portfolio gamma exposure elevated"
+          description: |
+            High gamma indicates accelerated P&L changes near current prices.
+            Current gamma: {{ $value }}
+            Action: Monitor closely, consider vega hedges
+
+      # ========================================================================
+      # MARKET CONDITION ALERTS
+      # ========================================================================
+
+      - alert: RegimeChangeDetected
+        expr: nautilus_regime_change > 0
+        for: 5m
+        labels:
+          severity: info
+          component: market_conditions
+          strategy: multi_factor
+        annotations:
+          summary: "Market regime change detected"
+          description: |
+            Regime detection algorithm identified market regime transition.
+            Previous regime: {{ $labels.previous_regime }}
+            New regime: {{ $labels.new_regime }}
+            Confidence: {{ $labels.confidence | humanizePercentage }}
+            Action: Review position sizing, update hedges, adjust factor weights
+
+      # ========================================================================
+      # MONITORING & SYSTEM HEALTH
+      # ========================================================================
+
+      - alert: RiskManagerDisconnected
+        expr: up{job="risk_manager"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+          strategy: multi_factor
+        annotations:
+          summary: "Risk manager disconnected from monitoring"
+          description: |
+            Risk manager Prometheus exporter is not responding.
+            This means real-time risk metrics are unavailable.
+            Action: Investigate risk manager service, restart if necessary
+
+      - alert: DataUpdateLag
+        expr: time() - nautilus_last_update_timestamp > 120
+        for: 3m
+        labels:
+          severity: warning
+          component: system
+          strategy: multi_factor
+        annotations:
+          summary: "Risk data more than 2 minutes stale"
+          description: |
+            Last data update: {{ $value | humanizeDuration }} ago
+            Metrics may be outdated and decisions should use caution.
+            Action: Check data feed, verify connectivity
+
+      # ========================================================================
+      # COMPOSITE ALERTS (Multiple Conditions)
+      # ========================================================================
+
+      - alert: MultipleAlertsCombined
+        expr: |
+          (nautilus_daily_loss_pct > 0.02) +
+          (nautilus_drawdown_pct > 0.10) +
+          (nautilus_leverage_ratio > 2.0) +
+          (nautilus_win_rate_20trades < 0.35) >= 3
+        for: 5m
+        labels:
+          severity: critical
+          component: risk_management
+          strategy: multi_factor
+        annotations:
+          summary: "CRITICAL: Multiple risk alerts triggered simultaneously"
+          description: |
+            Multiple risk conditions have been triggered at the same time.
+            This indicates compounding risk and stress.
+            Alerts triggered: {{ $value }} conditions
+            Action: Immediate management intervention required, review all positions

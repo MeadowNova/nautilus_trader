@@ -38,10 +38,8 @@ use crate::{
     strum::Display,
     strum::EnumIter,
 )]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
-)]
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.model"))]
+#[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[non_exhaustive]
 pub enum AmmType {
     /// Constant Product Automated Market Maker.
@@ -74,10 +72,8 @@ pub enum AmmType {
     Serialize,
     Deserialize,
 )]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
-)]
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.model"))]
+#[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 pub enum DexType {
     AerodromeSlipstream,
     AerodromeV1,
@@ -107,10 +103,8 @@ impl DexType {
 
 /// Represents a decentralized exchange (DEX) in a blockchain ecosystem.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
-)]
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.model"))]
+#[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass)]
 pub struct Dex {
     /// The blockchain network where this DEX operates.
     pub chain: Chain,
@@ -135,7 +129,7 @@ pub struct Dex {
     /// The type of automated market maker (AMM) algorithm used by this DEX.
     pub amm_type: AmmType,
     /// Collection of liquidity pools managed by this DEX.
-    #[allow(dead_code)] // TBD
+    #[allow(dead_code, reason = "TBD")]
     pairs: Vec<Pool>,
 }
 
@@ -268,6 +262,10 @@ impl From<Pool> for InstrumentAny {
         CurrencyPair::from(p).into_any()
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

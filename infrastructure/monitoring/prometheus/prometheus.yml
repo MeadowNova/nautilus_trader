@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['prometheus:9090']
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres_exporter:9187']
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis_exporter:9121']
+
+  - job_name: 'ai-adaptive-metrics-v2'
+    scrape_interval: 30s
+    scrape_timeout: 30s
+    static_configs:
+      - targets: ['ai_metrics_proxy:9101']
+        labels:
+          service: 'ai_metrics'

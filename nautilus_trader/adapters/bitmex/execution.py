@@ -23,7 +23,9 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -42,6 +44,7 @@ from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOU
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events import AccountState
@@ -49,9 +52,11 @@ from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.functions import contingency_type_to_pyo3
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.functions import time_in_force_to_pyo3
+from nautilus_trader.model.functions import trigger_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -210,7 +215,7 @@ class BitmexExecutionClient(LiveExecutionClient):
 
             self.generate_account_state(
                 balances=account_state.balances,
-                margins=[],  # TBD
+                margins=account_state.margins,
                 reported=True,
                 ts_event=self._clock.timestamp_ns(),
             )
@@ -261,17 +266,25 @@ class BitmexExecutionClient(LiveExecutionClient):
         try:
             pyo3_reports = await self._http_client.request_order_status_reports(
                 instrument_id=command.instrument_id,
-                open_only=False,
+                open_only=command.open_only,
                 limit=None,
             )
 
-            result: list[OrderStatusReport] = []
+            reports: list[OrderStatusReport] = []
 
             for pyo3_report in pyo3_reports:
-                result.append(OrderStatusReport.from_pyo3(pyo3_report))
+                reports.append(OrderStatusReport.from_pyo3(pyo3_report))
 
-            self._log.info(f"Generated {len(result)} order status reports")
-            return result
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
+
+            if command.log_receipt_level == LogLevel.INFO:
+                self._log.info(receipt_log)
+            else:
+                self._log.debug(receipt_log)
+
+            return reports
         except Exception as e:
             self._log.error(f"Failed to generate order status reports: {e}")
             return []
@@ -300,13 +313,16 @@ class BitmexExecutionClient(LiveExecutionClient):
                 limit=None,
             )
 
-            result: list[FillReport] = []
+            reports: list[FillReport] = []
 
             for pyo3_report in pyo3_reports:
-                result.append(FillReport.from_pyo3(pyo3_report))
+                reports.append(FillReport.from_pyo3(pyo3_report))
 
-            self._log.info(f"Generated {len(result)} fill reports")
-            return result
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            self._log.info(f"Received {len(reports)} FillReport{plural}")
+
+            return reports
         except Exception as e:
             self._log.error(f"Failed to generate fill reports: {e}")
             return []
@@ -321,12 +337,16 @@ class BitmexExecutionClient(LiveExecutionClient):
         try:
             pyo3_reports = await self._http_client.request_position_status_reports()
 
-            result = []
-            for pyo3_report in pyo3_reports:
-                result.append(PositionStatusReport.from_pyo3(pyo3_report))
+            reports = []
 
-            self._log.info(f"Generated {len(result)} position status reports")
-            return result
+            for pyo3_report in pyo3_reports:
+                reports.append(PositionStatusReport.from_pyo3(pyo3_report))
+
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
+
+            return reports
         except Exception as e:
             self._log.error(f"Failed to generate position status reports: {e}")
             return []
@@ -336,6 +356,20 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         if order.is_closed:
             self._log.warning(f"Cannot submit already closed order: {order}")
+            return
+
+        if order.is_quote_quantity:
+            reason = "UNSUPPORTED_QUOTE_QUANTITY"
+            self._log.error(
+                f"Cannot submit order {order.client_order_id}: {reason}",
+            )
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
             return
 
         # Generate OrderSubmitted event here to ensure correct event sequencing
@@ -358,11 +392,25 @@ class BitmexExecutionClient(LiveExecutionClient):
             if order.has_trigger_price
             else None
         )
+        pyo3_trigger_type = (
+            trigger_type_to_pyo3(order.trigger_type)
+            if order.has_trigger_price and hasattr(order, "trigger_type")
+            else None
+        )
         pyo3_display_qty = (
             nautilus_pyo3.Quantity.from_str(str(order.display_qty))
             if hasattr(order, "display_qty") and order.display_qty
             else None
         )
+
+        pyo3_contingency_type = None
+        pyo3_order_list_id = None
+
+        if order.order_list_id is not None:
+            pyo3_order_list_id = nautilus_pyo3.OrderListId(order.order_list_id.value)
+
+        if order.contingency_type in (ContingencyType.OCO, ContingencyType.OTO):
+            pyo3_contingency_type = contingency_type_to_pyo3(order.contingency_type)
 
         try:
             await self._http_client.submit_order(
@@ -374,9 +422,12 @@ class BitmexExecutionClient(LiveExecutionClient):
                 time_in_force=pyo3_time_in_force,
                 price=pyo3_price,
                 trigger_price=pyo3_trigger_price,
+                trigger_type=pyo3_trigger_type,
                 display_qty=pyo3_display_qty,
                 post_only=order.is_post_only,
                 reduce_only=order.is_reduce_only,
+                order_list_id=pyo3_order_list_id,
+                contingency_type=pyo3_contingency_type,
             )
         except Exception as e:
             self.generate_order_rejected(
@@ -388,7 +439,18 @@ class BitmexExecutionClient(LiveExecutionClient):
             )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        self._log.warning("Order list submission not yet implemented")
+        for order in command.order_list.orders:
+            submit_command = SubmitOrder(
+                trader_id=command.trader_id,
+                strategy_id=command.strategy_id,
+                order=order,
+                command_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+                position_id=command.position_id,
+                client_id=command.client_id,
+                params=command.params,
+            )
+            await self._submit_order(submit_command)
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -511,7 +573,51 @@ class BitmexExecutionClient(LiveExecutionClient):
                 )
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        self._log.warning("Batch cancel orders not yet implemented")
+        valid_cancels: list[CancelOrder] = []
+        client_order_ids: list[ClientOrderId] = []
+
+        for cancel in command.cancels:
+            order = self._cache.order(cancel.client_order_id)
+            if order is None:
+                self._log.error(f"{cancel.client_order_id!r} not found to cancel")
+                continue
+
+            if order.is_closed:
+                self._log.warning(
+                    f"BatchCancelOrders command for {cancel.client_order_id!r} when order already {order.status_string()} "
+                    "(will not send to exchange)",
+                )
+                continue
+
+            valid_cancels.append(cancel)
+            client_order_ids.append(cancel.client_order_id)
+
+        if not valid_cancels:
+            self._log.info("No valid orders to cancel in batch")
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        pyo3_client_order_ids = [
+            nautilus_pyo3.ClientOrderId.from_str(cid.value) for cid in client_order_ids
+        ]
+
+        try:
+            await self._http_client.cancel_orders(
+                instrument_id=pyo3_instrument_id,
+                client_order_ids=pyo3_client_order_ids,
+                venue_order_ids=None,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to batch cancel orders: {e}")
+            for cancel in valid_cancels:
+                self.generate_order_cancel_rejected(
+                    strategy_id=cancel.strategy_id,
+                    instrument_id=cancel.instrument_id,
+                    client_order_id=cancel.client_order_id,
+                    venue_order_id=cancel.venue_order_id,
+                    reason=str(e),
+                    ts_event=self._clock.timestamp_ns(),
+                )
 
     async def _query_order(self, command: QueryOrder) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -543,7 +649,6 @@ class BitmexExecutionClient(LiveExecutionClient):
             report = OrderStatusReport.from_pyo3(pyo3_report)
             self._send_order_status_report(report)
             self._log.info(f"Queried order {command.client_order_id}")
-
         except Exception as e:
             self._log.error(f"Failed to query order {command.client_order_id}: {e}")
 
@@ -639,6 +744,9 @@ class BitmexExecutionClient(LiveExecutionClient):
                 f"Cannot process order status report - order for {report.client_order_id!r} not found",
             )
             return
+
+        if order.linked_order_ids is not None:
+            report.linked_order_ids = list(order.linked_order_ids)
 
         if report.order_status == OrderStatus.REJECTED:
             pass  # Handled by submit_order

@@ -1,0 +1,56 @@
+# Serena Project Configuration for Nautilus Trader
+# This file configures how Serena understands and navigates your codebase
+
+name: nautilus_trader
+# The name of your project (used when activating via "activate project nautilus_trader")
+
+root: /home/ajk/Nautilus/nautilus_trader
+# Absolute path to the project root
+
+languages:
+  # Python configuration (main language)
+  - language: python
+    root_path: .
+    exclude_patterns:
+      - "**/.*"
+      - "**/__pycache__"
+      - "**/*.pyc"
+      - "**/venv"
+      - "**/.venv"
+      - "**/node_modules"
+      - "**/htmlcov"
+      - "**/data"
+      - "**/logs"
+      - "**/*.db"
+      - "**/*.lock"
+      - "**/build"
+      - "**/dist"
+      - "**/.pytest_cache"
+      - "**/.ruff_cache"
+      - "**/*.so"
+      - "**/target"
+      - "**/*.rs"
+    language_server: auto
+    # Options: auto, pylsp, pyright, jedi
+    # Serena will use the best available language server
+
+# Optional: Additional paths to monitor
+watch_paths:
+  - nautilus_trader
+  - docs
+  - tests
+  - examples
+  - python_scripts
+
+
+
+# Memory files to help Serena understand your architecture
+# These will be created as you work and help future Serena sessions
+memory_paths:
+  - .serena/memories
+
+# Project-specific tool settings
+tool_settings:
+  max_file_size: 1000000  # 1MB - skip files larger than this
+  max_search_results: 500
+  default_context_lines: 3
