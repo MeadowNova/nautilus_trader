@@ -1,209 +1,392 @@
-# Moomoo RL Paper Trading System
+# Nautilus Trader Production Infrastructure
 
-**A production-grade algorithmic trading system combining NautilusTrader, Moomoo OpenD API, and Reinforcement Learning**
-
-## Overview
-
-This system enables institutional-quality paper trading with real-time market data from Moomoo, powered by NautilusTrader's high-performance Rust/Python engine and enhanced with reinforcement learning that learns to "see out" winning trades.
-
-### Key Features
-
-- **Real Market Data**: Live US equity data via Moomoo OpenD API
-- **Event-Driven Architecture**: Nanosecond precision Rust core with Python strategies
-- **RL Enhancement**: Learns optimal entry/exit timing and captures more profitable moves
-- **Production Infrastructure**: PostgreSQL, Prometheus, Grafana monitoring
-- **Multiple Strategies**: Pairs trading, momentum breakout, with RL adaptations
-- **Paper Trading**: Risk-free validation before live deployment
-
-### System Status
-
-**Version**: 1.0.0
-**NautilusTrader**: v1.221.0
-**Python**: 3.11-3.13
-**Last Updated**: 2025-12-09
-
-**Current Blocker**: US market data subscription permissions must be enabled in Moomoo app before trading. See [CONFIGURATION.md](CONFIGURATION.md#market-data-permissions).
-
-## Quick Navigation
-
-| Document | Purpose | Time to Read |
-|----------|---------|--------------|
-| [QUICKSTART.md](QUICKSTART.md) | Get trading in 10 minutes | 5 min |
-| [SETUP.md](SETUP.md) | Detailed installation guide | 15 min |
-| [CONFIGURATION.md](CONFIGURATION.md) | Moomoo account & permissions setup | 10 min |
-| [STRATEGIES.md](STRATEGIES.md) | Trading strategies documentation | 20 min |
-| [MONITORING.md](MONITORING.md) | Dashboards and debugging | 10 min |
-| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues and solutions | As needed |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | System design deep-dive | 30 min |
-| [API_REFERENCE.md](API_REFERENCE.md) | Code examples and API docs | As needed |
-| [CHANGELOG.md](CHANGELOG.md) | Version history and fixes | As needed |
-
-## Getting Started
-
-### Prerequisites Checklist
-
-- [ ] Moomoo trading account with paper trading enabled
-- [ ] US market data permissions enabled (see [CONFIGURATION.md](CONFIGURATION.md))
-- [ ] OpenD gateway downloaded and installed
-- [ ] Python 3.11+ installed
-- [ ] Docker installed (for infrastructure services)
-- [ ] 8GB+ RAM available
-
-### Quick Start (5 Minutes)
-
-```bash
-# 1. Start OpenD gateway (separate terminal)
-./OpenD
-
-# 2. Navigate to project
-cd /home/ajk/Nautilus/nautilus_trader
-source .venv/bin/activate
-
-# 3. Verify OpenD connection
-python -c "from moomoo import OpenQuoteContext; ctx = OpenQuoteContext(); print(ctx.get_global_state())"
-
-# 4. Start infrastructure
-cd infrastructure/docker
-docker compose --env-file ../.env.local up -d
-
-# 5. Start trading
-cd ../..
-python scripts/start_paper_trading_moomoo.py
-```
-
-**See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.**
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    MOOMOO RL TRADING SYSTEM                          │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────┐      ┌──────────────┐      ┌───────────────────┐     │
-│  │  Moomoo  │      │ NautilusTrader│     │  RL Framework     │     │
-│  │  OpenD   │◄────►│    Engine     │◄───►│  (PPO/SAC)        │     │
-│  │ Gateway  │      │  (Rust Core)  │     │                   │     │
-│  └──────────┘      └──────────────┘      └───────────────────┘     │
-│       │                   │                       │                 │
-│       ▼                   ▼                       ▼                 │
-│  Market Data        Strategies            Experience Buffer         │
-│  + Execution      (Pairs/Momentum)       + Reward Shaping           │
-│                         │                       │                   │
-│                         ▼                       ▼                   │
-│                  Risk Management          Model Checkpoints         │
-│                  + Position Limits       + Training Metrics         │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-## Trading Strategies
-
-### 1. RL Pairs Trading (XLE/XLF)
-Statistical arbitrage on energy/financial sector ETFs with RL-enhanced timing.
-
-**Key Parameters:**
-- Entry: 2.25 sigma z-score
-- Exit: 0.25 sigma mean reversion
-- Position size: 2% per leg
-
-### 2. RL Momentum Breakout (NVDA, AMD, META)
-Trend following with volume confirmation and RL-optimized holding periods.
-
-**Key Parameters:**
-- Breakout: 15-day high with 1.75x volume
-- RSI: 50-70 range
-- Position size: 2% per instrument
-
-**See [STRATEGIES.md](STRATEGIES.md) for full parameter details and backtesting results.**
-
-## Monitoring & Dashboards
-
-Access real-time monitoring at:
-
-| Service | URL | Purpose |
-|---------|-----|---------|
-| Grafana | http://localhost:3000 | Trading dashboards |
-| Prometheus | http://localhost:9090 | Metrics and alerts |
-| Logs | `logs/MOOMOO-RL-PAPER-001_*.log` | System logs |
-
-## RL "Seeing Out" Innovation
-
-The key innovation is reward shaping that encourages holding winning trades longer:
-
-```python
-# Bonus for capturing 80%+ of favorable moves
-if capture_ratio >= 0.8:
-    seeing_out_bonus = 1.0
-elif capture_ratio >= 0.5:
-    seeing_out_bonus = 0.5
-```
-
-This addresses the common trader problem of exiting winners too early while cutting losers appropriately.
-
-## Risk Management
-
-Default risk parameters for $100,000 account:
-
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| Max Position Size | 2% ($2,000) | Per instrument |
-| Max Concurrent Positions | 8 | Total across strategies |
-| Daily Loss Limit | 3% ($3,000) | Halts new trades |
-| Max Drawdown | 10% ($10,000) | Emergency liquidation |
-| Stop Loss (1R) | 1% ($1,000) | Per trade risk |
-
-## Project Structure
-
-```
-nautilus_trader/
-├── scripts/
-│   └── start_paper_trading_moomoo.py    # Main entry point
-├── nautilus_trader/adapters/moomoo/     # Moomoo adapter
-│   ├── data.py                          # Market data client
-│   ├── execution.py                     # Order execution client
-│   ├── config.py                        # Configuration
-│   └── providers.py                     # Instrument provider
-├── ajk_strategies/
-│   ├── rl_strategies/                   # Trading strategies
-│   │   ├── pairs_trading.py            # Pairs strategy
-│   │   └── momentum_breakout.py        # Momentum strategy
-│   └── rl_framework/                    # RL components
-│       ├── agents/                      # RL agents
-│       ├── state/                       # State builder
-│       ├── reward/                      # Reward calculator
-│       └── training/                    # Trainer & buffer
-├── logs/                                # Trading logs
-├── models/                              # RL model checkpoints
-└── docs/moomoo-trading-system/         # This documentation
-```
-
-## Support & Resources
-
-### Documentation
-- [NautilusTrader Docs](https://nautilustrader.io)
-- [Moomoo OpenD API](https://www.moomoo.com/api)
-- [This Guide's Troubleshooting](TROUBLESHOOTING.md)
-
-### Common Issues
-1. **"No right to subscribe to US.XLE"** → Enable US market data in Moomoo app
-2. **OpenD connection failed** → Verify OpenD is running on port 11111
-3. **Strategies not trading** → Check market hours (9:30 AM - 4:00 PM ET)
-
-See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for comprehensive solutions.
-
-## Contributing
-
-This is a personal trading system. For Nautilus core contributions, see the main [CONTRIBUTING.md](../../CONTRIBUTING.md).
-
-## Disclaimer
-
-This system is for paper trading and educational purposes. Live trading involves substantial risk of loss. Always start with paper trading and thoroughly validate strategies before risking real capital.
-
-## License
-
-Follows NautilusTrader license. See [LICENSE](../../LICENSE) for details.
+**Complete Docker-based infrastructure for algorithmic trading**
 
 ---
 
-**Ready to trade?** → Start with [QUICKSTART.md](QUICKSTART.md)
+## 🎯 Quick Start (5 Minutes)
+
+```bash
+# 1. Navigate to infrastructure
+cd /home/ajk/Nautilus/nautilus_trader/infrastructure
+
+# 2. Run automated setup
+./setup.sh
+
+# 3. Access Grafana
+open http://localhost:3000
+
+# ✅ Done! Your trading infrastructure is running.
+```
+
+---
+
+## 📚 Documentation
+
+| Document | Purpose | When to Read |
+|----------|---------|--------------|
+| **[OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md)** | Complete guide from setup to live trading | **Start here** |
+| **[plan.md](../ai-working/database_Infra layer/plan.md)** | Detailed implementation plan | For developers |
+| **[docker-compose.yml](docker/docker-compose.yml)** | Service orchestration | For configuration |
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Docker Infrastructure                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐           │
+│  │ PostgreSQL  │  │   Redis     │  │ Prometheus  │           │
+│  │  (Data)     │  │  (Cache)    │  │  (Metrics)  │           │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘           │
+│         │                │                │                    │
+│         └────────────────┴────────────────┘                    │
+│                          │                                     │
+│                  ┌───────▼────────┐                            │
+│                  │    Grafana     │                            │
+│                  │  (Dashboards)  │                            │
+│                  └────────────────┘                            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+                          ▲
+                          │
+                ┌─────────┴──────────┐
+                │  Nautilus Trader   │
+                │  (Your Strategies) │
+                └────────────────────┘
+```
+
+---
+
+## 📦 What's Included
+
+### Services
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| **PostgreSQL 16** | 5432 | Persistent data storage (backtests, trades) |
+| **Redis 7** | 6379 | High-speed caching (strategy state, ML models) |
+| **Prometheus** | 9090 | Metrics collection |
+| **Grafana** | 3000 | Visualization dashboards |
+| **Postgres Exporter** | 9187 | PostgreSQL metrics |
+| **Redis Exporter** | 9121 | Redis metrics |
+
+### Database Schema
+
+**Core Tables:**
+- `backtests` - Backtest results with full metrics
+- `trades` - Individual trade records
+- `ml_optimization_log` - ML parameter adjustments
+- `regime_detection_log` - Market regime changes
+- `pattern_detection_log` - Chart patterns detected
+- `risk_events` - Risk management events
+- `sentiment_log` - Social sentiment data
+- `performance_metrics` - Time-series equity curve
+
+**Helper Views:**
+- `v_strategy_health` - Strategy health dashboard
+- `v_top_strategies` - Best performing configurations
+- `v_recent_backtests` - Recent backtest summary
+
+### Configuration Files
+
+```
+infrastructure/
+├── .env.template           # Environment variables template
+├── .env.local              # Your secrets (gitignored)
+├── setup.sh                # Automated setup script
+├── OPERATIONS_GUIDE.md     # Complete operations manual
+├── README.md               # This file
+│
+├── docker/
+│   └── docker-compose.yml  # Service orchestration
+│
+├── postgres/
+│   ├── postgresql.conf     # PostgreSQL tuning
+│   ├── 01-base-schema.sql  # Base Nautilus schema
+│   ├── 02-ai-extensions.sql # AI-specific tables
+│   └── 03-indexes.sql      # Performance indexes
+│
+└── monitoring/
+    ├── prometheus/
+    │   ├── prometheus.yml  # Metrics collection config
+    │   └── alerts.yml      # Alert rules
+    │
+    └── grafana/
+        ├── provisioning/   # Auto-configuration
+        └── dashboards/     # Pre-built dashboards
+```
+
+---
+
+## 🚀 Usage
+
+### Start Everything
+```bash
+cd infrastructure/docker
+docker-compose up -d
+```
+
+### Check Status
+```bash
+docker-compose ps
+```
+
+Expected output:
+```
+NAME                       STATUS
+nautilus_postgres          Up (healthy)
+nautilus_redis             Up (healthy)
+nautilus_prometheus        Up (healthy)
+nautilus_grafana           Up (healthy)
+nautilus_postgres_exporter Up
+nautilus_redis_exporter    Up
+```
+
+### View Logs
+```bash
+# All services
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f postgres
+docker-compose logs -f redis
+docker-compose logs -f grafana
+```
+
+### Stop Everything
+```bash
+docker-compose down
+```
+
+### Restart a Service
+```bash
+docker-compose restart postgres
+```
+
+### Complete Reset (⚠️ DELETES ALL DATA)
+```bash
+docker-compose down -v
+docker-compose up -d
+```
+
+---
+
+## 🔐 Security
+
+### Initial Setup
+1. **Copy template:** `cp .env.template .env.local`
+2. **Generate passwords:** Use `openssl rand -base64 24` for each
+3. **Secure file:** `chmod 600 .env.local`
+4. **Verify gitignore:** `.env.local` should be listed
+
+### Required Changes in .env.local
+```bash
+DB_PASSWORD=<generate_strong_password>
+REDIS_PASSWORD=<generate_strong_password>
+GRAFANA_PASSWORD=<generate_strong_password>
+```
+
+### API Keys (for paper/live trading)
+Add exchange API keys to `.env.local` when ready for Phase 3+:
+```bash
+BINANCE_API_KEY=
+BINANCE_API_SECRET=
+BINANCE_TESTNET=true  # false for live
+```
+
+**⚠️ NEVER commit .env.local to git!**
+
+---
+
+## 📊 Monitoring
+
+### Access Grafana
+1. Open: http://localhost:3000
+2. Login: `admin` / `<your GRAFANA_PASSWORD>`
+3. Navigate to Dashboards
+
+### Key Dashboards
+- **Trading Overview** - Real-time P&L, positions, trades
+- **Risk Metrics** - Drawdown, risk limits, circuit breakers
+- **System Health** - Container status, resource usage
+- **AI Strategy** - ML optimization, regime detection, patterns
+
+### Query Database Directly
+```bash
+# Open PostgreSQL shell
+docker exec -it nautilus_postgres psql -U nautilus -d nautilus_trader
+
+# Example queries:
+SELECT * FROM backtests ORDER BY created_at DESC LIMIT 10;
+SELECT * FROM v_strategy_health;
+SELECT * FROM v_top_strategies;
+```
+
+---
+
+## 🔧 Maintenance
+
+### Daily Backup
+```bash
+# Backup database
+docker exec nautilus_postgres pg_dump -U nautilus nautilus_trader | gzip > \
+    backups/nautilus_trader_$(date +%Y%m%d).sql.gz
+
+# Restore from backup
+gunzip < backups/nautilus_trader_20250115.sql.gz | \
+    docker exec -i nautilus_postgres psql -U nautilus -d nautilus_trader
+```
+
+### Clean Up Docker Resources
+```bash
+# Remove unused images/volumes
+docker system prune -f
+
+# View disk usage
+docker system df
+```
+
+### Update Services
+```bash
+cd infrastructure/docker
+
+# Pull latest images
+docker-compose pull
+
+# Restart with new images
+docker-compose down
+docker-compose up -d
+```
+
+### Database Optimization
+```bash
+# Vacuum and analyze
+docker exec -it nautilus_postgres psql -U nautilus -d nautilus_trader -c "
+VACUUM ANALYZE;
+REINDEX DATABASE nautilus_trader;
+"
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### Container Won't Start
+```bash
+# Check logs
+docker-compose logs [service_name]
+
+# Common fixes:
+docker-compose down
+docker-compose up -d
+```
+
+### Can't Connect to PostgreSQL
+```bash
+# Test connection
+docker exec -it nautilus_postgres pg_isready -U nautilus
+
+# Verify password
+grep DB_PASSWORD .env.local
+
+# Restart
+docker-compose restart postgres
+```
+
+### High Memory Usage
+```bash
+# Check usage
+docker stats
+
+# Restart services
+docker-compose restart
+
+# Adjust limits in docker-compose.yml (deploy.resources section)
+```
+
+### Port Already in Use
+```bash
+# Find process using port
+sudo lsof -i :5432
+
+# Kill process or change port in docker-compose.yml
+```
+
+---
+
+## 📈 Performance Tuning
+
+### PostgreSQL
+- **Small systems (< 4GB RAM):** `shared_buffers=512MB`
+- **Medium systems (8GB RAM):** `shared_buffers=2GB` (current)
+- **Large systems (16GB+ RAM):** `shared_buffers=4GB`
+
+Edit: `postgres/postgresql.conf`
+
+### Redis
+- **Memory limit:** Currently 512MB
+- **Eviction policy:** `allkeys-lru`
+- **Persistence:** AOF + RDB enabled
+
+Edit: `docker-compose.yml` (redis section)
+
+### Resource Limits
+Adjust in `docker-compose.yml`:
+```yaml
+deploy:
+  resources:
+    limits:
+      cpus: '2.0'
+      memory: 2G
+```
+
+---
+
+## 📞 Support
+
+### Documentation
+- **Operations Guide:** [OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md)
+- **Implementation Plan:** [plan.md](../ai-working/database_Infra layer/plan.md)
+- **Nautilus Docs:** https://nautilustrader.io/docs/
+
+### Community
+- **Discord:** https://discord.gg/nautilustrader
+- **GitHub Issues:** https://github.com/nautechsystems/nautilus_trader/issues
+
+### Logs
+- **Application:** `logs/` directory
+- **Docker:** `docker-compose logs -f`
+- **PostgreSQL:** Inside container at `/var/lib/postgresql/data/log/`
+
+---
+
+## 📝 Next Steps
+
+1. ✅ **Setup complete?** → Read [OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md)
+2. ✅ **Guide read?** → Run your first backtest
+3. ✅ **Backtest successful?** → Start paper trading
+4. ✅ **Paper trading stable?** → Consider live trading (with caution!)
+
+---
+
+## ⚠️ Important Notes
+
+- **Never commit `.env.local`** to git (contains secrets)
+- **Start small** when going live (test with minimum capital)
+- **Use paper trading first** (minimum 2 weeks)
+- **Keep backups** (daily database exports)
+- **Monitor constantly** (especially first week of live trading)
+- **Have a kill switch** (emergency stop procedure)
+
+---
+
+**Built with:** Docker, PostgreSQL, Redis, Prometheus, Grafana  
+**Maintained by:** Nautilus Trader Contributors  
+**License:** LGPL v3.0
+
+**Last Updated:** January 2025  
+**Version:** 1.0

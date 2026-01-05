@@ -36,3 +36,154 @@ groups:
         annotations:
           summary: AI-Adaptive Redis health check is failing
           description: Internal Redis health gauge reported zero for over 5 minutes. Investigate StrategyCache connectivity.
+
+  - name: polymarket-arbitrage
+    rules:
+      # ===== RISK ALERTS =====
+      - alert: PolymarketDailyLossLimitApproaching
+        expr: abs(polymarket_session_pnl_usd) > 40
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Approaching daily loss limit
+          description: Daily PnL is {{ $value }}. Daily loss limit is $50. Consider reducing position size.
+
+      - alert: PolymarketDailyLossLimitBreached
+        expr: polymarket_session_pnl_usd <= -50
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: Daily loss limit breached - trading halted
+          description: Daily loss of {{ $value }} exceeds $50 limit. All new entries should be halted.
+
+      - alert: PolymarketWinRateDecay
+        expr: polymarket_win_rate_pct < 75
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Win rate below abort threshold
+          description: Win rate is {{ $value }}%. Abort threshold is 75%. Consider widening entry threshold or halting.
+
+      # ===== EXECUTION GUARD ALERTS =====
+      - alert: PolymarketHighBlockRate
+        expr: rate(polymarket_hook_decisions_total{decision="blocked"}[10m]) / rate(polymarket_hook_decisions_total[10m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High order block rate
+          description: Over 50% of orders being blocked. Check invariant guards for over-sensitivity.
+
+      - alert: PolymarketStaleDataBlocking
+        expr: rate(polymarket_invariant_violations_total{invariant_type="stale_data"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Frequent stale data violations
+          description: Many orders blocked due to stale data. Check WebSocket connection health.
+
+      - alert: PolymarketLiquidityCliffBlocking
+        expr: rate(polymarket_invariant_violations_total{invariant_type="liquidity_cliff"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Frequent liquidity cliff violations
+          description: Many orders blocked due to insufficient liquidity. Consider reducing position size.
+
+      - alert: PolymarketHookLatencyHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(polymarket_hook_latency_seconds_bucket[5m]))) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Hook latency p95 above 100ms
+          description: Hook processing taking too long. This may impact execution speed.
+
+      # ===== BROWSER INTELLIGENCE ALERTS =====
+      - alert: PolymarketWhaleActivitySurge
+        expr: rate(polymarket_whale_detected_total[5m]) > 1
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: Elevated whale activity detected
+          description: Multiple whale orders detected in {{ $labels.market }}. Exercise caution.
+
+      - alert: PolymarketMMRepricingFrequent
+        expr: rate(polymarket_mm_repricing_total[5m]) > 2
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: Frequent MM repricing activity
+          description: Market makers actively repricing in {{ $labels.market }}. Edge may be compressed.
+
+      - alert: PolymarketLatencyAdvantageDecayed
+        expr: avg(polymarket_mm_latency_advantage_ms) < 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Browser latency advantage decaying
+          description: Average latency advantage {{ $value }}ms is below 30ms target. Edge quality degrading.
+
+      # ===== COUNTERFACTUAL ALERTS =====
+      - alert: PolymarketMissingProfits
+        expr: sum(polymarket_counterfactual_pnl_usd{decision="blocked"}) > 100
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: Blocked trades would have been profitable
+          description: Blocked trades would have netted ${{ $value }}. Consider loosening guards.
+
+      - alert: PolymarketShadowPnLNegative
+        expr: polymarket_shadow_would_have_pnl_total < -50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Shadow execution shows negative PnL
+          description: If shadow trades were real, you would have lost ${{ $value }}. Stay in shadow mode.
+
+      - alert: PolymarketShadowPnLPositive
+        expr: polymarket_shadow_would_have_pnl_total > 100
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: Shadow execution shows strong positive PnL
+          description: Shadow PnL is +${{ $value }}. Consider switching to GUARD mode.
+
+      # ===== MARKET STATE ALERTS =====
+      - alert: PolymarketDataStale
+        expr: max(polymarket_data_staleness_ms) > 5000
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Market data is stale
+          description: Market {{ $labels.market }} data is {{ $value }}ms old. Check WebSocket connection.
+
+      - alert: PolymarketLiquidityLow
+        expr: min(polymarket_liquidity_depth_usd) < 500
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Low liquidity depth
+          description: Market {{ $labels.market }} {{ $labels.side }} depth is only ${{ $value }}. Reduce position size.
+
+      - alert: PolymarketNoTradesInHour
+        expr: increase(polymarket_trades_total[1h]) == 0 and polymarket_open_positions == 0
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: No trades in last hour
+          description: No trading activity for over an hour. Check if edge opportunities exist.

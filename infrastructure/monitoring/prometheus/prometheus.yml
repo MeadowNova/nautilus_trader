@@ -22,3 +22,21 @@ scrape_configs:
       - targets: ['ai_metrics_proxy:9101']
         labels:
           service: 'ai_metrics'
+
+  - job_name: 'polymarket-arb'
+    scrape_interval: 5s
+    scrape_timeout: 5s
+    static_configs:
+      - targets: ['polymarket_metrics:9102']
+        labels:
+          service: 'polymarket_arb'
+          strategy: 'momentum_lag'
+
+  - job_name: 'polymarket-hooks'
+    scrape_interval: 1s
+    scrape_timeout: 1s
+    static_configs:
+      - targets: ['polymarket_hooks:9103']
+        labels:
+          service: 'polymarket_hooks'
+          component: 'execution_guard'

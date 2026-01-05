@@ -1,0 +1,655 @@
+{
+  "id": null,
+  "uid": "polymarket-arb-monitor",
+  "title": "Polymarket Arbitrage Monitor",
+  "description": "Real-time monitoring for Polymarket momentum lag arbitrage with execution guard hooks",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "market",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "query": "label_values(polymarket_gap_pct, market)",
+        "multi": true,
+        "includeAll": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Strategy Overview",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}
+    },
+    {
+      "type": "stat",
+      "title": "Session PnL",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "polymarket_session_pnl_usd",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": -50, "color": "red"},
+              {"value": 0, "color": "yellow"},
+              {"value": 50, "color": "green"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1}
+    },
+    {
+      "type": "stat",
+      "title": "Win Rate",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "polymarket_win_rate_pct",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 75, "color": "yellow"},
+              {"value": 85, "color": "green"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1}
+    },
+    {
+      "type": "stat",
+      "title": "Open Positions",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "polymarket_open_positions",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "gray"},
+              {"value": 1, "color": "blue"},
+              {"value": 4, "color": "orange"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1}
+    },
+    {
+      "type": "stat",
+      "title": "Daily Loss Used",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "abs(min_over_time(polymarket_session_pnl_usd[1d]))",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "max": 50,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 25, "color": "yellow"},
+              {"value": 40, "color": "red"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 1}
+    },
+    {
+      "type": "stat",
+      "title": "Trades Today",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "increase(polymarket_trades_total[1d])",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "gray"},
+              {"value": 5, "color": "green"},
+              {"value": 20, "color": "blue"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 1}
+    },
+    {
+      "type": "stat",
+      "title": "Execution Mode",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "polymarket_execution_mode",
+        "legendFormat": "{{mode}}",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "name"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "SHADOW", "color": "blue"}}},
+            {"type": "value", "options": {"1": {"text": "GUARD", "color": "green"}}},
+            {"type": "value", "options": {"2": {"text": "PASS", "color": "yellow"}}}
+          ]
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1}
+    },
+    {
+      "type": "row",
+      "title": "Execution Guard Hooks",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}
+    },
+    {
+      "type": "timeseries",
+      "title": "Hook Decisions Over Time",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "rate(polymarket_hook_decisions_total{decision=\"allowed\"}[5m])",
+          "legendFormat": "Allowed",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(polymarket_hook_decisions_total{decision=\"blocked\"}[5m])",
+          "legendFormat": "Blocked",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(polymarket_hook_decisions_total{decision=\"shadow\"}[5m])",
+          "legendFormat": "Shadow",
+          "refId": "C"
+        }
+      ],
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20
+          },
+          "color": {"mode": "palette-classic"}
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Allowed"}, "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "Blocked"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "Shadow"}, "properties": [{"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6}
+    },
+    {
+      "type": "piechart",
+      "title": "Invariant Violations by Type",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum by (invariant_type) (increase(polymarket_invariant_violations_total[1h]))",
+        "legendFormat": "{{invariant_type}}",
+        "refId": "A"
+      }],
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right"},
+        "pieType": "donut"
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 6}
+    },
+    {
+      "type": "bargauge",
+      "title": "Blocked by Reason (Last Hour)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum by (reason) (increase(polymarket_hook_decisions_total{decision=\"blocked\"}[1h]))",
+        "legendFormat": "{{reason}}",
+        "refId": "A"
+      }],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 5, "color": "yellow"},
+              {"value": 10, "color": "red"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 6}
+    },
+    {
+      "type": "row",
+      "title": "Counterfactual Analysis",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14}
+    },
+    {
+      "type": "timeseries",
+      "title": "Counterfactual PnL (What Would Have Happened)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "polymarket_counterfactual_pnl_usd{decision=\"blocked\"}",
+          "legendFormat": "Blocked Would-Be PnL",
+          "refId": "A"
+        },
+        {
+          "expr": "polymarket_shadow_would_have_pnl_total",
+          "legendFormat": "Shadow Cumulative PnL",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 15}
+    },
+    {
+      "type": "stat",
+      "title": "Shadow PnL Total",
+      "description": "What you would have made/lost if shadow trades were real",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "polymarket_shadow_would_have_pnl_total",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": -100, "color": "red"},
+              {"value": 0, "color": "yellow"},
+              {"value": 100, "color": "green"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 15}
+    },
+    {
+      "type": "stat",
+      "title": "Blocked Avoided Loss",
+      "description": "Losses avoided by blocking bad trades",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "abs(min(polymarket_counterfactual_pnl_usd{decision=\"blocked\"}))",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 15}
+    },
+    {
+      "type": "stat",
+      "title": "Blocked Missed Profit",
+      "description": "Profits missed by overly conservative blocking",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "max(polymarket_counterfactual_pnl_usd{decision=\"blocked\"})",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "yellow"},
+              {"value": 50, "color": "orange"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 15}
+    },
+    {
+      "type": "table",
+      "title": "Counterfactual Summary",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum by (decision, reason) (increase(polymarket_counterfactual_trades_total[1d]))",
+        "format": "table",
+        "refId": "A"
+      }],
+      "transformations": [
+        {"id": "groupBy", "options": {"fields": {"decision": {"aggregations": []}, "reason": {"aggregations": []}, "Value": {"aggregations": ["sum"]}}}}
+      ],
+      "gridPos": {"h": 4, "w": 12, "x": 12, "y": 19}
+    },
+    {
+      "type": "row",
+      "title": "Market State & Gap Monitoring",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23}
+    },
+    {
+      "type": "timeseries",
+      "title": "Gap % by Market",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "polymarket_gap_pct{market=~\"$market\"}",
+        "legendFormat": "{{market}}",
+        "refId": "A"
+      }],
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "thresholdsStyle": {"mode": "line"}
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "gray"},
+              {"value": 0.03, "color": "green"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+    },
+    {
+      "type": "timeseries",
+      "title": "Data Staleness (ms)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "polymarket_data_staleness_ms{market=~\"$market\"}",
+        "legendFormat": "{{market}}",
+        "refId": "A"
+      }],
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "thresholdsStyle": {"mode": "area"}
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 3000, "color": "yellow"},
+              {"value": 5000, "color": "red"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 24}
+    },
+    {
+      "type": "timeseries",
+      "title": "Liquidity Depth (USD)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "polymarket_liquidity_depth_usd{market=~\"$market\"}",
+        "legendFormat": "{{market}} {{side}}",
+        "refId": "A"
+      }],
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 24}
+    },
+    {
+      "type": "row",
+      "title": "Hook Latency & Performance",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 32}
+    },
+    {
+      "type": "heatmap",
+      "title": "Hook Latency Distribution",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "sum by (le) (rate(polymarket_hook_latency_seconds_bucket[5m]))",
+        "format": "heatmap",
+        "refId": "A"
+      }],
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": {"scheme": "Oranges"}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 33}
+    },
+    {
+      "type": "timeseries",
+      "title": "Hook Latency Percentiles",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(polymarket_hook_latency_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(polymarket_hook_latency_seconds_bucket[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(polymarket_hook_latency_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 33}
+    },
+    {
+      "type": "row",
+      "title": "Browser Intelligence Events",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 41}
+    },
+    {
+      "type": "timeseries",
+      "title": "Whale Detections",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "rate(polymarket_whale_detected_total[5m])",
+        "legendFormat": "{{market}} {{side}}",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "drawStyle": "bars"
+          }
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 42}
+    },
+    {
+      "type": "timeseries",
+      "title": "MM Repricing Events",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "rate(polymarket_mm_repricing_total[5m])",
+        "legendFormat": "{{market}}",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "drawStyle": "bars"
+          }
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 42}
+    },
+    {
+      "type": "stat",
+      "title": "Latency Advantage (ms)",
+      "description": "How early we see MM repricing vs public API",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "expr": "avg(polymarket_mm_latency_advantage_ms)",
+        "refId": "A"
+      }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 50, "color": "yellow"},
+              {"value": 100, "color": "green"}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 42}
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "name": "Trades",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "expr": "changes(polymarket_trades_total[1m]) > 0",
+        "enable": true,
+        "iconColor": "green"
+      },
+      {
+        "name": "Blocked Orders",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "expr": "changes(polymarket_hook_decisions_total{decision=\"blocked\"}[1m]) > 0",
+        "enable": true,
+        "iconColor": "red"
+      }
+    ]
+  }
+}
